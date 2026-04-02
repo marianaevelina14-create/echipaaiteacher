@@ -193,8 +193,6 @@ def get_latest_update_from_json(keyword, latest_updates):
     return "No updates found for the specified keyword."
 
 
-def on_chat_submit(chat_input, latest_updates):
-    user_input = chat_input.strip()
 
     try:
         assistant_reply = ""
