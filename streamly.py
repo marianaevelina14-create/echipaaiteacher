@@ -291,11 +291,15 @@ def main():
     """
     Display Streamlit updates and handle the chat interface.
     """
-    initialize_session_state()
-def initialize_session_state():
+   def initialize_session_state():
     if "history" not in st.session_state:
         st.session_state.history = []
 
+    if "conversation_history" not in st.session_state:
+        st.session_state.conversation_history = []
+
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = None
     if "conversation_history" not in st.session_state:
         st.session_state.conversation_history = []
 
