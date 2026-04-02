@@ -291,7 +291,7 @@ def main():
     """
     Display Streamlit updates and handle the chat interface.
     """
-  def initialize_session_state():
+def initialize_session_state():
     if "history" not in st.session_state:
         st.session_state.history = []
 
