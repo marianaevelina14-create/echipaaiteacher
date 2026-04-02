@@ -289,6 +289,7 @@ except Exception as e:
     st.error(f"Eroare: {str(e)}")
     
   def initialize_session_state():
+      
     if "history" not in st.session_state:
         st.session_state.history = []
 
