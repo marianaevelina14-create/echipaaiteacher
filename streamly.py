@@ -246,7 +246,7 @@ def on_chat_submit(chat_input, latest_updates):
 
         st.session_state.history.append({"role": "user", "content": user_input})
         st.session_state.history.append({"role": "assistant", "content": assistant_reply})
-
+save_to_supabase(user_input, assistant_reply)
     except OpenAIError as e:
         logging.error(f"Error occurred: {e}")
         st.error(f"OpenAI Error: {str(e)}")
@@ -528,3 +528,18 @@ def main():
 
 if __name__ == "__main__":
     main()
+    from supabase import create_client
+
+supabase = create_client(
+    st.secrets["SUPABASE_URL"],
+    st.secrets["SUPABASE_KEY"]
+)
+def save_to_supabase(user_message, bot_message):
+    try:
+        supabase.table("messages").insert({
+            "user_message": user_message,
+            "bot_response": bot_message
+        }).execute()
+    except Exception as e:
+        logging.error(f"Supabase error: {e}")
+        
