@@ -7,6 +7,21 @@ import requests
 import base64
 from openai import OpenAI, OpenAIError
 
+
+logging.basicConfig(level=logging.INFO)
+
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+ASSISTANT_ID = st.secrets.get("OPENAI_ASSISTANT_ID")
+
+if not OPENAI_API_KEY:
+    st.error("Missing OPENAI_API_KEY in secrets")
+    st.stop()
+
+if not ASSISTANT_ID:
+    st.error("Missing OPENAI_ASSISTANT_ID in secrets")
+    st.stop()
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
