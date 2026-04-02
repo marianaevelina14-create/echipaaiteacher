@@ -6,7 +6,15 @@ import json
 import requests
 import base64
 from openai import OpenAI, OpenAIError
+def initialize_session_state():
+    if "history" not in st.session_state:
+        st.session_state.history = []
 
+    if "conversation_history" not in st.session_state:
+        st.session_state.conversation_history = []
+
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = None
 
 logging.basicConfig(level=logging.INFO)
 
@@ -291,12 +299,14 @@ except Exception as e:
 def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
-def main():
+
+    def main():
     """
     Display Streamlit updates and handle the chat interface.
     """
     initialize_session_state()
-    if not st.session_state.history and not st.session_state.conversation_history:
+
+    if len(st.session_state.history) == 0 and len(st.session_state.conversation_history) == 0:
         st.session_state.conversation_history = initialize_conversation()
 
     # Apply custom CSS for the updated AI Teacher design (Blue/Orange theme based on the logo)
