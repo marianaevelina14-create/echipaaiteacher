@@ -192,63 +192,62 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
+try:
+    assistant_reply = ""
 
+    if "latest updates" in user_input.lower():
+        assistant_reply = "Here are the latest highlights from Streamlit:\n"
+        highlights = latest_updates.get("Highlights", {})
 
-       try:
-        assistant_reply = ""
-
-        if "latest updates" in user_input.lower():
-            assistant_reply = "Here are the latest highlights from Streamlit:\n"
-            highlights = latest_updates.get("Highlights", {})
-            if highlights:
-                for version, info in highlights.items():
-                    description = info.get("Description", "No description available.")
-                    assistant_reply += f"- **{version}**: {description}\n"
-            else:
-                assistant_reply = "No highlights found."
+        if highlights:
+            for version, info in highlights.items():
+                description = info.get("Description", "No description available.")
+                assistant_reply += f"- **{version}**: {description}\n"
         else:
-            thread_id = get_or_create_thread()
+            assistant_reply = "No highlights found."
 
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_input
-            )
+    else:
+        thread_id = get_or_create_thread()
 
-            run = client.beta.threads.runs.create_and_poll(
-                thread_id=thread_id,
-                assistant_id=ASSISTANT_ID,
-                tools=[{"type": "file_search"}],
-                additional_instructions="Recomandare de sistem: Folosește obligatoriu file_search."
-            )
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_input
+        )
 
-            if run.status != "completed":
-                raise OpenAIError(f"Run status: {run.status}")
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID,
+            tools=[{"type": "file_search"}],
+            additional_instructions="Folosește file_search pentru răspunsuri corecte și detaliate."
+        )
 
-            messages = client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=10
-            )
+        if run.status != "completed":
+            raise OpenAIError(f"Run status: {run.status}")
 
-            assistant_reply = "Nu am primit un răspuns de la asistent."
-            for msg in messages.data:
-                if msg.role == "assistant":
-                    text_parts = []
-                    for content in msg.content:
-                        if content.type == "text":
-                            text_parts.append(content.text.value)
-                    if text_parts:
-                        assistant_reply = "\n".join(text_parts)
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=10
+        )
+
+        assistant_reply = "Nu am primit un răspuns de la asistent."
+
+        for msg in messages.data:
+            if msg.role == "assistant":
+                for content in msg.content:
+                    if content.type == "text":
+                        assistant_reply = content.text.value
                         break
+                break
 
-    except OpenAIError as e:
-        logging.error(f"OpenAI Error occurred: {e}")
-        st.error(f"OpenAI Error: {str(e)}")
+except OpenAIError as e:
+    logging.error(f"OpenAI Error occurred: {e}")
+    st.error(f"OpenAI Error: {str(e)}")
 
-    except Exception as e:
-        logging.error(f"General error: {e}")
-        st.error(f"Eroare: {str(e)}")
+except Exception as e:
+    logging.error(f"General error: {e}")
+    st.error(f"Eroare: {str(e)}")
 try:
     assistant_reply = ""
 
