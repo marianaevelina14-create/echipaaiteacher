@@ -247,6 +247,13 @@ def on_chat_submit(chat_input, latest_updates):
         st.session_state.history.append({"role": "user", "content": user_input})
         st.session_state.history.append({"role": "assistant", "content": assistant_reply})
 save_to_supabase(user_input, assistant_reply)
+try:
+    # codul tău
+    save_to_supabase(user_input, assistant_reply)
+
+except Exception as e:
+    logging.error(f"Error: {e}")
+    st.error(f"Eroare: {e}")
     except OpenAIError as e:
         logging.error(f"Error occurred: {e}")
         st.error(f"OpenAI Error: {str(e)}")
