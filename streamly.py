@@ -244,19 +244,30 @@ def on_chat_submit(chat_input, latest_updates):
                         assistant_reply = "\n".join(text_parts)
                         break
 
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
-save_to_supabase(user_input, assistant_reply)
-try:
-    # codul tău
+        try:
+    assistant_reply = ""
+
+    # aici rămâne logica ta OpenAI (NU o ștergi)
+
+    st.session_state.history.append({
+        "role": "user",
+        "content": user_input
+    })
+
+    st.session_state.history.append({
+        "role": "assistant",
+        "content": assistant_reply
+    })
+
     save_to_supabase(user_input, assistant_reply)
 
+except OpenAIError as e:
+    logging.error(f"OpenAI Error occurred: {e}")
+    st.error(f"OpenAI Error: {str(e)}")
+
 except Exception as e:
-    logging.error(f"Error: {e}")
-    st.error(f"Eroare: {e}")
-    except OpenAIError as e:
-        logging.error(f"Error occurred: {e}")
-        st.error(f"OpenAI Error: {str(e)}")
+    logging.error(f"General error: {e}")
+    st.error(f"Eroare: {str(e)}")
 
 def initialize_session_state():
     if "history" not in st.session_state:
