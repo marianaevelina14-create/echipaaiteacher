@@ -299,8 +299,7 @@ except Exception as e:
 def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
-
-    def main():
+def main():
     """
     Display Streamlit updates and handle the chat interface.
     """
@@ -308,7 +307,6 @@ def initialize_session_state():
 
     if len(st.session_state.history) == 0 and len(st.session_state.conversation_history) == 0:
         st.session_state.conversation_history = initialize_conversation()
-
     # Apply custom CSS for the updated AI Teacher design (Blue/Orange theme based on the logo)
     st.markdown(
         """
