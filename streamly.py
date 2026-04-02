@@ -24,12 +24,7 @@ if not ASSISTANT_ID:
 client = OpenAI(api_key=OPENAI_API_KEY)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-from supabase import create_client
 
-supabase = create_client(
-    st.secrets["SUPABASE_URL"],
-    st.secrets["SUPABASE_KEY"]
-)
 # Constants
 NUMBER_OF_MESSAGES_TO_DISPLAY = 20
 API_DOCS_URL = "https://docs.streamlit.io/library/api-reference"
