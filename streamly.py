@@ -246,32 +246,30 @@ def get_latest_update_from_json(keyword, latest_updates):
        
     def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
+try:
+    assistant_reply = ""
 
-    try:
-        assistant_reply = ""
+    # 🔥 aici rămâne logica ta OpenAI (cea mare, NU o ștergi)
 
-        # 🔥 AICI TREBUIE SĂ FIE LOGICA TA OPENAI (NU O ȘTERGE)
+    st.session_state.history.append({
+        "role": "user",
+        "content": user_input
+    })
 
-        st.session_state.history.append({
-            "role": "user",
-            "content": user_input
-        })
+    st.session_state.history.append({
+        "role": "assistant",
+        "content": assistant_reply
+    })
 
-        st.session_state.history.append({
-            "role": "assistant",
-            "content": assistant_reply
-        })
+    save_to_supabase(user_input, assistant_reply)
 
-        save_to_supabase(user_input, assistant_reply)
+except OpenAIError as e:
+    logging.error(f"OpenAI Error occurred: {e}")
+    st.error(f"OpenAI Error: {str(e)}")
 
-    except OpenAIError as e:
-        logging.error(f"OpenAI Error occurred: {e}")
-        st.error(f"OpenAI Error: {str(e)}")
-
-    except Exception as e:
-        logging.error(f"General error: {e}")
-        st.error(f"Eroare: {str(e)}")
-
+except Exception as e:
+    logging.error(f"General error: {e}")
+    st.error(f"Eroare: {str(e)}")
 def main():
     """
     Display Streamlit updates and handle the chat interface.
