@@ -244,38 +244,35 @@ def on_chat_submit(chat_input, latest_updates):
                         assistant_reply = "\n".join(text_parts)
                         break
 
-        try:
-    assistant_reply = ""
+       
+       
+    def on_chat_submit(chat_input, latest_updates):
+    user_input = chat_input.strip()
 
-    # aici rămâne logica ta OpenAI (NU o ștergi)
+    try:
+        assistant_reply = ""
 
-    st.session_state.history.append({
-        "role": "user",
-        "content": user_input
-    })
+        # 🔥 AICI TREBUIE SĂ FIE LOGICA TA OPENAI (NU O ȘTERGE)
 
-    st.session_state.history.append({
-        "role": "assistant",
-        "content": assistant_reply
-    })
+        st.session_state.history.append({
+            "role": "user",
+            "content": user_input
+        })
 
-    save_to_supabase(user_input, assistant_reply)
+        st.session_state.history.append({
+            "role": "assistant",
+            "content": assistant_reply
+        })
 
-except OpenAIError as e:
-    logging.error(f"OpenAI Error occurred: {e}")
-    st.error(f"OpenAI Error: {str(e)}")
+        save_to_supabase(user_input, assistant_reply)
 
-except Exception as e:
-    logging.error(f"General error: {e}")
-    st.error(f"Eroare: {str(e)}")
+    except OpenAIError as e:
+        logging.error(f"OpenAI Error occurred: {e}")
+        st.error(f"OpenAI Error: {str(e)}")
 
-def initialize_session_state():
-    if "history" not in st.session_state:
-        st.session_state.history = []
-    if "conversation_history" not in st.session_state:
-        st.session_state.conversation_history = []
-    if "thread_id" not in st.session_state:
-        st.session_state.thread_id = None
+    except Exception as e:
+        logging.error(f"General error: {e}")
+        st.error(f"Eroare: {str(e)}")
 
 def main():
     """
