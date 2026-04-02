@@ -288,10 +288,9 @@ except Exception as e:
     logging.error(f"General error: {e}")
     st.error(f"Eroare: {str(e)}")
     
- def initialize_session_state():
-    st.session_state.history = st.session_state.get("history", [])
-    st.session_state.conversation_history = st.session_state.get("conversation_history", [])
-    st.session_state.thread_id = st.session_state.get("thread_id", None)
+def initialize_session_state():
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 def main():
     """
     Display Streamlit updates and handle the chat interface.
