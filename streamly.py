@@ -287,7 +287,7 @@ except OpenAIError as e:
 except Exception as e:
     logging.error(f"General error: {e}")
     st.error(f"Eroare: {str(e)}")
-   def initialize_session_state():
+  def initialize_session_state():
     if "history" not in st.session_state:
         st.session_state.history = []
 
