@@ -194,7 +194,7 @@ def get_latest_update_from_json(keyword, latest_updates):
 
 
 
-    try:
+       try:
         assistant_reply = ""
 
         if "latest updates" in user_input.lower():
@@ -219,7 +219,7 @@ def get_latest_update_from_json(keyword, latest_updates):
                 thread_id=thread_id,
                 assistant_id=ASSISTANT_ID,
                 tools=[{"type": "file_search"}],
-                additional_instructions="Recomandare de sistem: Folosește obligatoriu cunoștințele din fișierele și baza ta de date atașată (file_search) pentru a răspunde detaliat la întrebări."
+                additional_instructions="Recomandare de sistem: Folosește obligatoriu file_search."
             )
 
             if run.status != "completed":
@@ -242,16 +242,13 @@ def get_latest_update_from_json(keyword, latest_updates):
                         assistant_reply = "\n".join(text_parts)
                         break
 
-       except OpenAIError as e:
-    logging.error(f"OpenAI Error occurred: {e}")
-    st.error(f"OpenAI Error: {str(e)}")
+    except OpenAIError as e:
+        logging.error(f"OpenAI Error occurred: {e}")
+        st.error(f"OpenAI Error: {str(e)}")
 
-except Exception as e:
-    logging.error(f"General error: {e}")
-    st.error(f"Eroare: {str(e)}")
-       
-    def on_chat_submit(chat_input, latest_updates):
-    user_input = chat_input.strip()
+    except Exception as e:
+        logging.error(f"General error: {e}")
+        st.error(f"Eroare: {str(e)}")
 try:
     assistant_reply = ""
 
