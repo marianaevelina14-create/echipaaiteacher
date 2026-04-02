@@ -25,6 +25,7 @@ supabase = create_client(
 )
 
 NUMBER_OF_MESSAGES_TO_DISPLAY = 20
+API_DOCS_URL = "https://docs.streamlit.io/library/api-reference"
 
 
 # =========================
@@ -43,7 +44,7 @@ def initialize_session_state():
 
 
 # =========================
-# SUPABASE
+# SUPABASE SAVE
 # =========================
 
 def save_to_supabase(user_message, bot_message):
@@ -57,7 +58,7 @@ def save_to_supabase(user_message, bot_message):
 
 
 # =========================
-# THREAD HANDLER
+# THREAD
 # =========================
 
 def get_or_create_thread():
@@ -68,7 +69,7 @@ def get_or_create_thread():
 
 
 # =========================
-# LOAD UPDATES
+# STREAMLIT UPDATES
 # =========================
 
 def load_streamlit_updates():
@@ -80,7 +81,7 @@ def load_streamlit_updates():
 
 
 # =========================
-# CHAT LOGIC
+# CHAT LOGIC (FIXED + ORIGINAL FEATURES)
 # =========================
 
 def on_chat_submit(chat_input, latest_updates):
@@ -89,16 +90,19 @@ def on_chat_submit(chat_input, latest_updates):
     try:
         assistant_reply = ""
 
-        # CASE 1: updates
+        # ===== FEATURE 1: Latest updates =====
         if "latest updates" in user_input.lower():
+            assistant_reply = "Here are the latest highlights from Streamlit:\n"
             highlights = latest_updates.get("Highlights", {})
-            assistant_reply = "Here are the latest updates:\n"
 
-            for version, info in highlights.items():
-                description = info.get("Description", "")
-                assistant_reply += f"- {version}: {description}\n"
+            if highlights:
+                for version, info in highlights.items():
+                    description = info.get("Description", "No description available.")
+                    assistant_reply += f"- **{version}**: {description}\n"
+            else:
+                assistant_reply = "No highlights found."
 
-        # CASE 2: OpenAI Assistant
+        # ===== FEATURE 2: OPENAI ASSISTANT =====
         else:
             thread_id = get_or_create_thread()
 
@@ -112,6 +116,7 @@ def on_chat_submit(chat_input, latest_updates):
                 thread_id=thread_id,
                 assistant_id=ASSISTANT_ID,
                 tools=[{"type": "file_search"}],
+                additional_instructions="Folosește file_search pentru răspunsuri corecte și detaliate."
             )
 
             if run.status != "completed":
@@ -123,7 +128,7 @@ def on_chat_submit(chat_input, latest_updates):
                 limit=10
             )
 
-            assistant_reply = "No response from assistant."
+            assistant_reply = "Nu am primit răspuns de la asistent."
 
             for msg in messages.data:
                 if msg.role == "assistant":
@@ -133,7 +138,7 @@ def on_chat_submit(chat_input, latest_updates):
                             break
                     break
 
-        # SAVE HISTORY
+        # ===== SAVE HISTORY =====
         st.session_state["history"].append({
             "role": "user",
             "content": user_input
@@ -144,30 +149,35 @@ def on_chat_submit(chat_input, latest_updates):
             "content": assistant_reply
         })
 
-        # SAVE SUPABASE
+        # ===== SAVE SUPABASE =====
         save_to_supabase(user_input, assistant_reply)
 
     except OpenAIError as e:
-        logging.error(e)
-        st.error(f"OpenAI error: {e}")
+        logging.error(f"OpenAI Error: {e}")
+        st.error(f"OpenAI Error: {e}")
 
     except Exception as e:
-        logging.error(e)
-        st.error(f"Error: {e}")
+        logging.error(f"General error: {e}")
+        st.error(f"Eroare: {e}")
 
 
 # =========================
-# STREAMLIT UI
+# MAIN APP (YOUR ORIGINAL STRUCTURE PRESERVED)
 # =========================
 
 def main():
     st.set_page_config(
         page_title="AI Teacher Web App",
         page_icon="imgs/logo.jpg",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
 
     initialize_session_state()
+
+    # ===== YOUR ORIGINAL UI LOGIC =====
+    st.markdown("""<style>/* (PĂSTREAZĂ CSS-UL TĂU AICI EXACT CUM ERA) */</style>""",
+                unsafe_allow_html=True)
 
     # ===== CHAT INPUT =====
     chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
@@ -176,7 +186,7 @@ def main():
         latest_updates = load_streamlit_updates()
         on_chat_submit(chat_input, latest_updates)
 
-    # ===== CHAT DISPLAY =====
+    # ===== CHAT HISTORY =====
     for msg in st.session_state["history"][-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
         avatar = "imgs/logo.jpg" if msg["role"] == "assistant" else "👤"
 
