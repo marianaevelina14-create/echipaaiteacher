@@ -242,7 +242,13 @@ def get_latest_update_from_json(keyword, latest_updates):
                         assistant_reply = "\n".join(text_parts)
                         break
 
-       
+       except OpenAIError as e:
+    logging.error(f"OpenAI Error occurred: {e}")
+    st.error(f"OpenAI Error: {str(e)}")
+
+except Exception as e:
+    logging.error(f"General error: {e}")
+    st.error(f"Eroare: {str(e)}")
        
     def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
