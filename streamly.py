@@ -20,16 +20,16 @@ if not OPENAI_API_KEY:
 if not ASSISTANT_ID:
     st.error("Missing OPENAI_ASSISTANT_ID in secrets")
     st.stop()
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 from supabase import create_client
 
 supabase = create_client(
     st.secrets["SUPABASE_URL"],
     st.secrets["SUPABASE_KEY"]
 )
-client = OpenAI(api_key=OPENAI_API_KEY)
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-
 # Constants
 NUMBER_OF_MESSAGES_TO_DISPLAY = 20
 API_DOCS_URL = "https://docs.streamlit.io/library/api-reference"
