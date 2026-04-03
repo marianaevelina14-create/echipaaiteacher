@@ -35,6 +35,12 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+def save_message(session_id, role, content):
+    supabase.table("messages").insert({
+        "session_id": session_id,
+        "role": role,
+        "content": content
+    }).execute()
 # Streamlit Page Configuration
 st.set_page_config(
     page_title="AI Teacher Web App",
