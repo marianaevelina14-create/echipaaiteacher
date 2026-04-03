@@ -6,7 +6,7 @@ import json
 import requests
 import base64
 from openai import OpenAI, OpenAIError
-
+from supabase import create_client
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
@@ -30,6 +30,11 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 ASSISTANT_ID = st.secrets["OPENAI_ASSISTANT_ID"]
 
+
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Streamlit Page Configuration
 st.set_page_config(
     page_title="AI Teacher Web App",
@@ -200,6 +205,7 @@ def on_chat_submit(chat_input, latest_updates):
         assistant_reply = ""
 
         if "latest updates" in user_input.lower():
+            save_message(st.session_state.session_id, "user", user_input)
             assistant_reply = "Here are the latest highlights from Streamlit:\n"
             highlights = latest_updates.get("Highlights", {})
             if highlights:
@@ -252,13 +258,17 @@ def on_chat_submit(chat_input, latest_updates):
         st.error(f"OpenAI Error: {str(e)}")
 
 def initialize_session_state():
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(time.time())
+
     if "history" not in st.session_state:
         st.session_state.history = []
+
     if "conversation_history" not in st.session_state:
         st.session_state.conversation_history = []
+
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = None
-
 def main():
     """
     Display Streamlit updates and handle the chat interface.
