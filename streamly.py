@@ -206,7 +206,7 @@ def get_latest_update_from_json(keyword, latest_updates):
 
 def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
-
+save_message(st.session_state.session_id, "user", user_input)
     try:
         assistant_reply = ""
 
