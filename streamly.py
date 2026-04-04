@@ -41,6 +41,40 @@ def save_message(session_id, role, content):
         "role": role,
         "content": content
     }).execute()
+    from datetime import datetime, timedelta
+
+def block_chat(session_id):
+    blocked_until = datetime.utcnow() + timedelta(minutes=5)
+
+    supabase.table("chat_limits").upsert({
+        "session_id": session_id,
+        "blocked_until": blocked_until.isoformat()
+    }).execute()
+
+
+def is_chat_blocked(session_id):
+    response = supabase.table("chat_limits") \
+        .select("*") \
+        .eq("session_id", session_id) \
+        .execute()
+
+    if response.data:
+        blocked_until = response.data[0]["blocked_until"]
+        blocked_until = datetime.fromisoformat(blocked_until)
+
+        if datetime.utcnow() < blocked_until:
+            return True
+
+    return False
+
+
+def is_inappropriate(text):
+    bad_words = ["prost", "idiot", "stupid", "dracu"]
+
+    for word in bad_words:
+        if word in text.lower():
+            return True
+    return False
 # Streamlit Page Configuration
 st.set_page_config(
     page_title="AI Teacher Web App",
