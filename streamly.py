@@ -373,7 +373,7 @@ def on_chat_submit(chat_input, latest_updates):
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
         
-       def initialize_session_state():
+def initialize_session_state():
 
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(time.time())
