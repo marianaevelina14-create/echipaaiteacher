@@ -207,10 +207,17 @@ def get_latest_update_from_json(keyword, latest_updates):
 def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
 
+    # ✅ SALVEAZĂ USERUL
+    try:
+        save_message(st.session_state.session_id, "user", user_input)
+    except Exception as e:
+        st.error(f"Eroare salvare user: {e}")
+
+    # 🔥 LOGICA PRINCIPALĂ (SEPARAT!)
     try:
         assistant_reply = ""
+
         if "latest updates" in user_input.lower():
-            save_message(st.session_state.session_id, "user", user_input)
             assistant_reply = "Here are the latest highlights from Streamlit:\n"
             highlights = latest_updates.get("Highlights", {})
             if highlights:
@@ -219,6 +226,7 @@ def on_chat_submit(chat_input, latest_updates):
                     assistant_reply += f"- **{version}**: {description}\n"
             else:
                 assistant_reply = "No highlights found."
+
         else:
             thread_id = get_or_create_thread()
 
@@ -255,14 +263,16 @@ def on_chat_submit(chat_input, latest_updates):
                         assistant_reply = "\n".join(text_parts)
                         break
 
+        # UI
         st.session_state.history.append({"role": "user", "content": user_input})
         st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+
+        # ✅ SALVEAZĂ AI
         save_message(st.session_state.session_id, "assistant", assistant_reply)
- 
+
     except OpenAIError as e:
         logging.error(f"Error occurred: {e}")
         st.error(f"OpenAI Error: {str(e)}")
-
 def initialize_session_state():
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(time.time())
