@@ -70,6 +70,16 @@ def is_chat_blocked(session_id):
 
 
 def is_inappropriate(text):
+    def is_apology(text):
+    apologies = [
+        "scuze",
+        "imi pare rau",
+        "îmi pare rău",
+        "sorry",
+        "ma ierti",
+        "mă ierți"
+    ]
+    return any(word in text.lower() for word in apologies)
     bad_words = ["prost", "idiot", "stupid", "dracu"]
 
     for word in bad_words:
