@@ -36,6 +36,40 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def save_message(session_id, role, content):
+    from datetime import datetime, timedelta
+
+def block_chat(session_id):
+    blocked_until = datetime.utcnow() + timedelta(minutes=5)
+
+    supabase.table("chat_limits").upsert({
+        "session_id": session_id,
+        "blocked_until": blocked_until.isoformat()
+    }).execute()
+
+
+def is_chat_blocked(session_id):
+    response = supabase.table("chat_limits") \
+        .select("*") \
+        .eq("session_id", session_id) \
+        .execute()
+
+    if response.data:
+        blocked_until = response.data[0]["blocked_until"]
+        blocked_until = datetime.fromisoformat(blocked_until)
+
+        if datetime.utcnow() < blocked_until:
+            return True
+
+    return False
+
+
+def is_inappropriate(text):
+    bad_words = ["prost", "idiot", "stupid", "dracu"]
+
+    for word in bad_words:
+        if word in text.lower():
+            return True
+    return False
     supabase.table("messages").insert({
         "session_id": session_id,
         "role": role,
@@ -240,6 +274,16 @@ def get_latest_update_from_json(keyword, latest_updates):
 
 def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
+    # ⛔ 1. verifică dacă e blocat
+if is_chat_blocked(st.session_state.session_id):
+    st.warning("⛔ Chat blocat 5 minute.")
+    return
+
+# ⚠️ 2. verifică limbaj neadecvat
+if is_inappropriate(user_input):
+    block_chat(st.session_state.session_id)
+    st.error("⚠️ Limbaj neadecvat detectat. Chat blocat 5 minute.")
+    return
 
     # ✅ SALVEAZĂ USERUL
     try:
