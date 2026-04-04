@@ -41,9 +41,9 @@ def save_message(session_id, role, content):
     supabase.table("messages").insert({
         "session_id": session_id,
         "role": role,
-        "content": content
+        "content": content,
+        "created_at": datetime.utcnow().isoformat()
     }).execute()
-
 
 def block_chat(session_id):
     blocked_until = datetime.utcnow() + timedelta(minutes=5)
