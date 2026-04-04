@@ -288,28 +288,7 @@ def get_latest_update_from_json(keyword, latest_updates):
     return "No updates found for the specified keyword."
 
 
-        
-
-   
-def on_chat_submit(chat_input, latest_updates):
-    # ⛔ dacă chat-ul e blocat
-if is_chat_blocked(st.session_state.session_id):
-
-    # 🔓 deblocare prin scuze SAU educație
-    if is_apology(user_input) or is_educational(user_input):
-
-        supabase.table("chat_limits") \
-            .delete() \
-            .eq("session_id", st.session_state.session_id) \
-            .execute()
-
-        st.session_state.bad_count = 0
-        st.success("✅ Chat deblocat!")
-        return
-
-    # ❌ dacă NU se califică pentru deblocare
-    st.warning("⛔ Chat blocat. Spune scuze sau pune o întrebare educațională.")
-    return
+        def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
 
     # init counter
@@ -319,27 +298,19 @@ if is_chat_blocked(st.session_state.session_id):
     # ⛔ CHECK BLOCKED
     if is_chat_blocked(st.session_state.session_id):
 
-        if is_apology(user_input):
+        # 🔓 deblocare prin scuze sau educație
+        if is_apology(user_input) or is_educational(user_input):
+
             supabase.table("chat_limits") \
                 .delete() \
                 .eq("session_id", st.session_state.session_id) \
                 .execute()
 
             st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat după scuze 👍")
+            st.success("✅ Chat deblocat!")
             return
 
-        if is_educational(user_input):
-            supabase.table("chat_limits") \
-                .delete() \
-                .eq("session_id", st.session_state.session_id) \
-                .execute()
-
-            st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat. Hai să învățăm!")
-            return
-
-        st.warning("⛔ Chat blocat. Spune 'scuze' sau pune o întrebare educațională.")
+        st.warning("⛔ Chat blocat. Spune scuze sau pune o întrebare educațională.")
         return
 
     # ⚠️ BAD WORDS CHECK
@@ -355,13 +326,12 @@ if is_chat_blocked(st.session_state.session_id):
         st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
         return
 
-    # 💾 SAVE USER (ONCE)
+    # 💾 SAVE USER
     save_message(st.session_state.session_id, "user", user_input)
 
     try:
         assistant_reply = ""
 
-        # 📌 SPECIAL CASE
         if "latest updates" in user_input.lower():
             assistant_reply = "Here are the latest Streamlit updates."
 
@@ -378,11 +348,8 @@ if is_chat_blocked(st.session_state.session_id):
                 thread_id=thread_id,
                 assistant_id=ASSISTANT_ID,
                 tools=[{"type": "file_search"}],
-                additional_instructions="Folosește fișierele încărcate pentru răspunsuri corecte și detaliate."
+                additional_instructions="Folosește fișierele încărcate pentru răspunsuri corecte."
             )
-
-            if run.status != "completed":
-                raise Exception(f"Run failed: {run.status}")
 
             messages = client.beta.threads.messages.list(
                 thread_id=thread_id,
@@ -394,14 +361,12 @@ if is_chat_blocked(st.session_state.session_id):
 
             for msg in messages.data:
                 if msg.role == "assistant":
-                    parts = [
-                        c.text.value for c in msg.content if c.type == "text"
-                    ]
+                    parts = [c.text.value for c in msg.content if c.type == "text"]
                     if parts:
                         assistant_reply = "\n".join(parts)
                         break
 
-        # 💾 SAVE ASSISTANT (ONCE)
+        # 💾 SAVE ASSISTANT
         save_message(st.session_state.session_id, "assistant", assistant_reply)
 
         # 🧠 UPDATE UI
