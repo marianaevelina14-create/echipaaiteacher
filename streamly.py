@@ -372,6 +372,21 @@ def on_chat_submit(chat_input, latest_updates):
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
+        def initialize_session_state():
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(time.time())
+
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    if "conversation_history" not in st.session_state:
+        st.session_state.conversation_history = []
+
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = None
+
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
 def main():
     """
     Display Streamlit updates and handle the chat interface.
