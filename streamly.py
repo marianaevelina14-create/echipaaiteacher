@@ -45,13 +45,7 @@ def save_message(session_id, role, content):
         "created_at": datetime.utcnow().isoformat()
     }).execute()
 
-def block_chat(session_id):
-    blocked_until = datetime.utcnow() + timedelta(minutes=5)
 
-    supabase.table("chat_limits").upsert({
-        "session_id": session_id,
-        "blocked_until": blocked_until.isoformat()
-    }).execute()
 
 def is_chat_blocked(session_id):
     response = supabase.table("chat_limits") \
@@ -70,7 +64,15 @@ def is_chat_blocked(session_id):
 
 
 def is_inappropriate(text):
-    def is_apology(text):
+    bad_words = ["prost", "idiot", "stupid", "dracu"]
+
+    for word in bad_words:
+        if word in text.lower():
+            return True
+    return False
+
+
+def is_apology(text):
     apologies = [
         "scuze",
         "imi pare rau",
@@ -80,12 +82,6 @@ def is_inappropriate(text):
         "mă ierți"
     ]
     return any(word in text.lower() for word in apologies)
-    bad_words = ["prost", "idiot", "stupid", "dracu"]
-
-    for word in bad_words:
-        if word in text.lower():
-            return True
-    return False
     supabase.table("messages").insert({
         "session_id": session_id,
         "role": role,
@@ -290,15 +286,6 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
-# ⛔ CHECK BLOCKED
-if is_chat_blocked(st.session_state.session_id):
-
-    # 🔓 DEBLOCARE prin scuze
-    if is_apology(user_input):
-        supabase.table("chat_limits") \
-            .delete() \
-            .eq("session_id", st.session_state.session_id) \
-            .execute()
 
         st.session_state.bad_count = 0
         st.success("✅ Chat deblocat după scuze 👍")
@@ -314,14 +301,42 @@ if is_chat_blocked(st.session_state.session_id):
         st.session_state.bad_count = 0
         st.success("✅ Chat deblocat. Hai să învățăm!")
         return
+def on_chat_submit(chat_input, latest_updates):
+    user_input = chat_input.strip()
 
-    # ⛔ dacă NU face nimic corect
-    st.warning("⛔ Chat blocat. Spune 'scuze' sau pune o întrebare educațională.")
-    return
+    # init counter
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
+
+    # ⛔ CHECK BLOCKED
+    if is_chat_blocked(st.session_state.session_id):
+
+        if is_apology(user_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
+            st.success("✅ Chat deblocat după scuze 👍")
+            return
+
+        elif is_educational(user_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
+            st.success("✅ Chat deblocat. Hai să învățăm!")
+            return
+
+        else:
+            st.warning("⛔ Chat blocat. Spune 'scuze' sau pune o întrebare educațională.")
+            return
 
     # ⚠️ CHECK BAD WORDS
     if is_inappropriate(user_input):
-
         st.session_state.bad_count += 1
 
         if st.session_state.bad_count >= 3:
@@ -330,6 +345,99 @@ if is_chat_blocked(st.session_state.session_id):
             st.error("⛔ Blocat 5 minute.")
             return
 
+        st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
+        return
+
+    # 💾 SAVE USER (O SINGURĂ DATĂ)
+    save_message(st.session_state.session_id, "user", user_input)
+
+    try:
+        assistant_reply = ""
+
+        # 📌 SPECIAL CASE: updates
+        if "latest updates" in user_input.lower():
+            assistant_reply = "Here are the latest Streamlit updates..."
+
+        else:
+            thread_id = get_or_create_thread()
+
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_input
+            )
+
+            run = client.beta.threads.runs.create_and_poll(
+                thread_id=thread_id,
+                assistant_id=ASSISTANT_ID,
+                tools=[{"type": "file_search"}],
+                additional_instructions="Folosește fișierele încărcate pentru răspunsuri detaliate."
+            )
+
+            if run.status != "completed":
+                raise Exception(f"Run failed with status: {run.status}")
+
+            messages = client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=10
+            )
+
+            assistant_reply = "Nu am primit răspuns."
+            for msg in messages.data:
+                if msg.role == "assistant":
+                    text_parts = [
+                        c.text.value for c in msg.content if c.type == "text"
+                    ]
+                    if text_parts:
+                        assistant_reply = "\n".join(text_parts)
+                        break
+
+        # 💾 SAVE ASSISTANT (O SINGURĂ DATĂ)
+        save_message(st.session_state.session_id, "assistant", assistant_reply)
+
+        # 🧠 UPDATE UI HISTORY
+        st.session_state.history.append({"role": "user", "content": user_input})
+        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+
+    except Exception as e:
+        st.error(f"Eroare: {str(e)}")
+
+    try:
+        thread_id = get_or_create_thread()
+
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_input
+        )
+
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID,
+            tools=[{"type": "file_search"}]
+        )
+
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=10
+        )
+
+        assistant_reply = "Nu am primit răspuns."
+
+        for msg in messages.data:
+            if msg.role == "assistant":
+                assistant_reply = msg.content[0].text.value
+                break
+
+        st.session_state.history.append({"role": "user", "content": user_input})
+        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+
+        save_message(st.session_state.session_id, "assistant", assistant_reply)
+
+    except Exception as e:
+        st.error(str(e))
         st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
         return
 
