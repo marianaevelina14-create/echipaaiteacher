@@ -116,6 +116,9 @@ def is_inappropriate(text):
             return True
     return False
 # Streamlit Page Configuration
+def is_educational(text):
+    keywords = ["matematica", "istorie", "romana", "explica", "ajuta", "problema"]
+    return any(k in text.lower() for k in keywords)
 st.set_page_config(
     page_title="AI Teacher Web App",
     page_icon="imgs/logo.jpg",
@@ -277,20 +280,85 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
-
 def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
 
-    # ⛔ 1. verifică dacă e blocat
+    # init counter
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
+
+    # ⛔ CHECK BLOCKED
     if is_chat_blocked(st.session_state.session_id):
-        st.warning("⛔ Chat blocat 5 minute.")
+
+        if is_educational(user_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
+            st.success("✅ Chat deblocat!")
+        else:
+            st.warning("⛔ Chat blocat. Revino la subiect educațional.")
+            return
+
+    # ⚠️ CHECK BAD WORDS
+    if is_inappropriate(user_input):
+
+        st.session_state.bad_count += 1
+
+        if st.session_state.bad_count >= 3:
+            block_chat(st.session_state.session_id)
+            st.session_state.bad_count = 0
+            st.error("⛔ Blocat 5 minute.")
+            return
+
+        st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
         return
 
-    # ⚠️ 2. verifică limbaj neadecvat
-    if is_inappropriate(user_input):
-        block_chat(st.session_state.session_id)
-        st.error("⚠️ Limbaj neadecvat detectat. Chat blocat 5 minute.")
-        return
+    # 💾 SAVE USER
+    save_message(st.session_state.session_id, "user", user_input)
+
+    try:
+        assistant_reply = ""
+
+        if "latest updates" in user_input.lower():
+            assistant_reply = "Streamlit updates..."
+
+        else:
+            thread_id = get_or_create_thread()
+
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_input
+            )
+
+            run = client.beta.threads.runs.create_and_poll(
+                thread_id=thread_id,
+                assistant_id=ASSISTANT_ID,
+                tools=[{"type": "file_search"}]
+            )
+
+            messages = client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=10
+            )
+
+            assistant_reply = "No response"
+            for msg in messages.data:
+                if msg.role == "assistant":
+                    assistant_reply = msg.content[0].text.value
+                    break
+
+        st.session_state.history.append({"role": "user", "content": user_input})
+        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+
+        save_message(st.session_state.session_id, "assistant", assistant_reply)
+
+    except Exception as e:
+        st.error(str(e))
     # ✅ SALVEAZĂ USERUL
     try:
         save_message(st.session_state.session_id, "user", user_input)
