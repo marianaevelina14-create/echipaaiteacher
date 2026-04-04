@@ -287,28 +287,29 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
-if is_apology(user_input):
-    supabase.table("chat_limits") \
-        .delete() \
-        .eq("session_id", st.session_state.session_id) \
-        .execute()
 
-    st.session_state.bad_count = 0
-    st.success("✅ Chat deblocat!")
-    return
         
 
-    # 🔓 DEBLOCARE prin educație
-    if is_educational(user_input):
+   
+def on_chat_submit(chat_input, latest_updates):
+    # ⛔ dacă chat-ul e blocat
+if is_chat_blocked(st.session_state.session_id):
+
+    # 🔓 deblocare prin scuze SAU educație
+    if is_apology(user_input) or is_educational(user_input):
+
         supabase.table("chat_limits") \
             .delete() \
             .eq("session_id", st.session_state.session_id) \
             .execute()
 
         st.session_state.bad_count = 0
-        st.success("✅ Chat deblocat. Hai să învățăm!")
+        st.success("✅ Chat deblocat!")
         return
-def on_chat_submit(chat_input, latest_updates):
+
+    # ❌ dacă NU se califică pentru deblocare
+    st.warning("⛔ Chat blocat. Spune scuze sau pune o întrebare educațională.")
+    return
     user_input = chat_input.strip()
 
     # init counter
