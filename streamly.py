@@ -290,27 +290,34 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
-def on_chat_submit(chat_input, latest_updates):
-    user_input = chat_input.strip()
+# ⛔ CHECK BLOCKED
+if is_chat_blocked(st.session_state.session_id):
 
-    # init counter
-    if "bad_count" not in st.session_state:
+    # 🔓 DEBLOCARE prin scuze
+    if is_apology(user_input):
+        supabase.table("chat_limits") \
+            .delete() \
+            .eq("session_id", st.session_state.session_id) \
+            .execute()
+
         st.session_state.bad_count = 0
+        st.success("✅ Chat deblocat după scuze 👍")
+        return
 
-    # ⛔ CHECK BLOCKED
-    if is_chat_blocked(st.session_state.session_id):
+    # 🔓 DEBLOCARE prin educație
+    if is_educational(user_input):
+        supabase.table("chat_limits") \
+            .delete() \
+            .eq("session_id", st.session_state.session_id) \
+            .execute()
 
-        if is_educational(user_input):
-            supabase.table("chat_limits") \
-                .delete() \
-                .eq("session_id", st.session_state.session_id) \
-                .execute()
+        st.session_state.bad_count = 0
+        st.success("✅ Chat deblocat. Hai să învățăm!")
+        return
 
-            st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat!")
-        else:
-            st.warning("⛔ Chat blocat. Revino la subiect educațional.")
-            return
+    # ⛔ dacă NU face nimic corect
+    st.warning("⛔ Chat blocat. Spune 'scuze' sau pune o întrebare educațională.")
+    return
 
     # ⚠️ CHECK BAD WORDS
     if is_inappropriate(user_input):
