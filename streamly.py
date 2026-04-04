@@ -287,10 +287,16 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
+if is_apology(user_input):
+    supabase.table("chat_limits") \
+        .delete() \
+        .eq("session_id", st.session_state.session_id) \
+        .execute()
 
-        st.session_state.bad_count = 0
-        st.success("✅ Chat deblocat după scuze 👍")
-        return
+    st.session_state.bad_count = 0
+    st.success("✅ Chat deblocat!")
+    return
+        
 
     # 🔓 DEBLOCARE prin educație
     if is_educational(user_input):
