@@ -287,8 +287,7 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
-
-        def on_chat_submit(chat_input, latest_updates):
+def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
 
     # init counter
@@ -298,7 +297,6 @@ def get_latest_update_from_json(keyword, latest_updates):
     # ⛔ CHECK BLOCKED
     if is_chat_blocked(st.session_state.session_id):
 
-        # 🔓 deblocare prin scuze sau educație
         if is_apology(user_input) or is_educational(user_input):
 
             supabase.table("chat_limits") \
@@ -332,6 +330,7 @@ def get_latest_update_from_json(keyword, latest_updates):
     try:
         assistant_reply = ""
 
+        # 📌 SPECIAL CASE
         if "latest updates" in user_input.lower():
             assistant_reply = "Here are the latest Streamlit updates."
 
@@ -348,8 +347,11 @@ def get_latest_update_from_json(keyword, latest_updates):
                 thread_id=thread_id,
                 assistant_id=ASSISTANT_ID,
                 tools=[{"type": "file_search"}],
-                additional_instructions="Folosește fișierele încărcate pentru răspunsuri corecte."
+                additional_instructions="Folosește fișierele încărcate pentru răspunsuri corecte și detaliate."
             )
+
+            if run.status != "completed":
+                raise Exception(f"Run failed: {run.status}")
 
             messages = client.beta.threads.messages.list(
                 thread_id=thread_id,
@@ -375,139 +377,6 @@ def get_latest_update_from_json(keyword, latest_updates):
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
-    try:
-        assistant_reply = ""
-
-        # 📌 SPECIAL CASE: updates
-        if "latest updates" in user_input.lower():
-            assistant_reply = "Here are the latest Streamlit updates..."
-
-        else:
-            thread_id = get_or_create_thread()
-
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_input
-            )
-
-            run = client.beta.threads.runs.create_and_poll(
-                thread_id=thread_id,
-                assistant_id=ASSISTANT_ID,
-                tools=[{"type": "file_search"}],
-                additional_instructions="Folosește fișierele încărcate pentru răspunsuri detaliate."
-            )
-
-            if run.status != "completed":
-                raise Exception(f"Run failed with status: {run.status}")
-
-            messages = client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=10
-            )
-
-            assistant_reply = "Nu am primit răspuns."
-            for msg in messages.data:
-                if msg.role == "assistant":
-                    text_parts = [
-                        c.text.value for c in msg.content if c.type == "text"
-                    ]
-                    if text_parts:
-                        assistant_reply = "\n".join(text_parts)
-                        break
-
-        # 💾 SAVE ASSISTANT (O SINGURĂ DATĂ)
-        save_message(st.session_state.session_id, "assistant", assistant_reply)
-
-        # 🧠 UPDATE UI HISTORY
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
-
-    except Exception as e:
-        st.error(f"Eroare: {str(e)}")
-
-    try:
-        thread_id = get_or_create_thread()
-
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_input
-        )
-
-        run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id,
-            assistant_id=ASSISTANT_ID,
-            tools=[{"type": "file_search"}]
-        )
-
-        messages = client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=10
-        )
-
-        assistant_reply = "Nu am primit răspuns."
-
-        for msg in messages.data:
-            if msg.role == "assistant":
-                assistant_reply = msg.content[0].text.value
-                break
-
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
-
-        save_message(st.session_state.session_id, "assistant", assistant_reply)
-
-    except Exception as e:
-        st.error(str(e))
-        st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
-        return
-
-    # 💾 SAVE USER
-    save_message(st.session_state.session_id, "user", user_input)
-
-    try:
-        assistant_reply = ""
-
-        if "latest updates" in user_input.lower():
-            assistant_reply = "Streamlit updates..."
-
-        else:
-            thread_id = get_or_create_thread()
-
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_input
-            )
-
-            run = client.beta.threads.runs.create_and_poll(
-                thread_id=thread_id,
-                assistant_id=ASSISTANT_ID,
-                tools=[{"type": "file_search"}]
-            )
-
-            messages = client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=10
-            )
-
-            assistant_reply = "No response"
-            for msg in messages.data:
-                if msg.role == "assistant":
-                    assistant_reply = msg.content[0].text.value
-                    break
-
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
-
-        save_message(st.session_state.session_id, "assistant", assistant_reply)
-
-    except Exception as e:
-        st.error(str(e))
     # ✅ SALVEAZĂ USERUL
     try:
         save_message(st.session_state.session_id, "user", user_input)
