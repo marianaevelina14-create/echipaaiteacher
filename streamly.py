@@ -324,8 +324,6 @@ def on_chat_submit(chat_input, latest_updates):
         st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
         return
 
-    # 💾 SAVE USER
-    save_message(st.session_state.session_id, "user", user_input)
 
     try:
         assistant_reply = ""
