@@ -323,7 +323,54 @@ def on_chat_submit(chat_input, latest_updates):
 
         st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
         return
+# 💾 SAVE USER
+save_message(st.session_state.session_id, "user", user_input)
 
+try:
+    assistant_reply = ""
+
+    if "latest updates" in user_input.lower():
+        assistant_reply = "Here are the latest Streamlit updates."
+
+    else:
+        thread_id = get_or_create_thread()
+
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_input
+        )
+
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID,
+            tools=[{"type": "file_search"}]
+        )
+
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=10
+        )
+
+        assistant_reply = "Nu am primit răspuns."
+
+        for msg in messages.data:
+            if msg.role == "assistant":
+                parts = [c.text.value for c in msg.content if c.type == "text"]
+                if parts:
+                    assistant_reply = "\n".join(parts)
+                    break
+
+    # 💾 SAVE ASSISTANT
+    save_message(st.session_state.session_id, "assistant", assistant_reply)
+
+    # 🧠 UPDATE UI
+    st.session_state.history.append({"role": "user", "content": user_input})
+    st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+
+except Exception as e:
+    st.error(f"Eroare: {str(e)}")
 
     try:
         assistant_reply = ""
