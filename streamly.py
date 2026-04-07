@@ -105,12 +105,122 @@ def initialize_session_state():
     if "session_id" not in st.session_state:
        import uuid
 
-def initialize_session_state():
-    if "warning_stage" not in st.session_state:
-        st.session_state.warning_stage = 0
+    Returns:
+    - str: Formatted update messages.
+    """
+    formatted_message = []
+    highlights = latest_updates.get("Highlights", {})
+    version_info = highlights.get("Version 1.36", {})
+    if version_info:
+        description = version_info.get("Description", "No description available.")
+        formatted_message.append(f"- **Version 1.36**: {description}")
 
-    if "chat_status" not in st.session_state:
-        st.session_state.chat_status = "active"
+    for category, updates in latest_updates.items():
+        formatted_message.append(f"**{category}**:")
+        for sub_key, sub_values in updates.items():
+            if sub_key != "Version 1.36":  # Skip the version info as it's already included
+                description = sub_values.get("Description", "No description available.")
+                documentation = sub_values.get("Documentation", "No documentation available.")
+                formatted_message.append(f"- **{sub_key}**: {description}")
+                formatted_message.append(f"  - **Documentation**: {documentation}")
+    return "\n".join(formatted_message)
+
+@st.cache_data(show_spinner=False)
+def get_latest_update_from_json(keyword, latest_updates):
+    for section in ["Highlights", "Notable Changes", "Other Changes"]:
+        for sub_key, sub_value in latest_updates.get(section, {}).items():
+            for key, value in sub_value.items():
+                if keyword.lower() in key.lower() or keyword.lower() in value.lower():
+                    return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
+    return "No updates found for the specified keyword."
+
+def on_chat_submit(chat_input, latest_updates):
+    user_input = chat_input.strip()
+
+    # init counter
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
+
+    # ⛔ BLOCKED CHECK
+    if is_chat_blocked(st.session_state.session_id):
+
+        if is_apology(user_input) or is_educational(user_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
+            st.success("✅ Chat deblocat!")
+            return
+
+        st.warning("⛔ Chat blocat. Spune scuze sau întrebare educațională.")
+        return
+
+    # ⚠️ BAD WORDS
+    if is_inappropriate(user_input):
+        st.session_state.bad_count += 1
+
+        if st.session_state.bad_count >= 3:
+            block_chat(st.session_state.session_id)
+            st.session_state.bad_count = 0
+            st.error("⛔ Blocat 5 minute.")
+            return
+
+        st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
+        return
+
+    # 💾 SAVE USER (1 SINGURĂ DATĂ)
+    save_message(st.session_state.session_id, "user", user_input)
+
+    try:
+        assistant_reply = ""
+
+        # 📌 SPECIAL CASE
+        if "latest updates" in user_input.lower():
+            assistant_reply = "Here are the latest Streamlit updates."
+
+        else:
+            thread_id = get_or_create_thread()
+
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_input
+            )
+
+            run = client.beta.threads.runs.create_and_poll(
+                thread_id=thread_id,
+                assistant_id=ASSISTANT_ID,
+                tools=[{"type": "file_search"}]
+            )
+
+            messages = client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=10
+            )
+
+            assistant_reply = "Nu am primit răspuns."
+
+            for msg in messages.data:
+                if msg.role == "assistant":
+                    parts = [c.text.value for c in msg.content if c.type == "text"]
+                    if parts:
+                        assistant_reply = "\n".join(parts)
+                        break
+
+        # 💾 SAVE ASSISTANT (1 SINGURĂ DATĂ)
+        save_message(st.session_state.session_id, "assistant", assistant_reply)
+
+        # 🧠 UPDATE UI (1 SINGURĂ DATĂ)
+        st.session_state.history.append({"role": "user", "content": user_input})
+        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+
+    except Exception as e:
+        st.error(f"Eroare: {str(e)}")
+        
+def initialize_session_state():
 
     # 🔥 FIX PERSISTENT SESSION ID
     if "session_id" not in st.session_state:
