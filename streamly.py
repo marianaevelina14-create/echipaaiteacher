@@ -237,6 +237,9 @@ def initialize_session_state():
 if "chat_status" not in st.session_state:
     st.session_state.chat_status = "active"
 
+if "chat_status" not in st.session_state:
+    st.session_state.chat_status = "active"
+
     # 🔥 FIX PERSISTENT SESSION ID
     if "session_id" not in st.session_state:
         st.session_state.session_id = st.query_params.get("session_id", None)
@@ -271,6 +274,19 @@ def render_sidebar():
 # MAIN
 # =========================
 def main():
+
+    initialize_session_state()
+    status_placeholder = st.empty()
+
+with status_placeholder.container():
+    if st.session_state.chat_status == "warning":
+        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
+
+    elif st.session_state.chat_status == "blocked":
+        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
+
+    elif st.session_state.chat_status == "active":
+        st.success("🟢 Chat activ")
 
     initialize_session_state()
     status_placeholder = st.empty()
@@ -602,6 +618,27 @@ div[data-testid="stHorizontalBlock"] {
                 on_chat_submit(hint_message, latest_updates)
 
     # Chat Input Processing
+   # 🔒 verificăm dacă chat-ul este blocat
+blocked = is_chat_blocked(st.session_state.session_id)
+
+if blocked:
+    st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
+
+    apology_input = st.text_input("Scrie scuze aici:")
+
+    if apology_input:
+        if is_apology(apology_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
+            st.success("✅ Chat deblocat!")
+            st.rerun()
+        else:
+            st.error("❌ Nu este o scuză validă.")
+else:
     chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
     if chat_input:
         latest_updates = load_streamlit_updates()
