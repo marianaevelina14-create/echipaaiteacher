@@ -283,6 +283,18 @@ def main():
         }
         
         /* Chat header and UI improvements */
+        .chat-header {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #ff7f00 !important; /* Orange Header */
+            margin: 0;
+            padding-bottom: 0;
+        }
+        div[data-testid="column"]:first-child {
+    background-color: #000000 !important;
+    padding: 15px 20px;
+    border-radius: 10px;
+}
         
         
         div[data-testid="stHorizontalBlock"] {
