@@ -268,13 +268,7 @@ def main():
         }
         
         /* Chat header and UI improvements */
-        .chat-header {
-            font-size: 2.2rem;
-            font-weight: 800;
-            color: #ff7f00 !important; /* Orange Header */
-            margin: 0;
-            padding-bottom: 0;
-        }
+        
         
         div[data-testid="stHorizontalBlock"] {
     background-color: #000000 !important;
@@ -364,7 +358,7 @@ div[data-testid="stHorizontalBlock"] {
         )
     else:
         st.sidebar.markdown("<h1 style='color:#ff7f00; font-size: 2rem;'>AI Teacher</h1>", unsafe_allow_html=True)
-    
+
     # (Removed the explicit <hr> line separating logo and ABOUT text so it perfectly matches the image)
     
     st.sidebar.markdown("<div class='sidebar-heading'>DESPRE</div>", unsafe_allow_html=True)
