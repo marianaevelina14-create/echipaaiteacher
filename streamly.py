@@ -373,6 +373,15 @@ div[data-testid="stHorizontalBlock"] {
     Un asistent educațional inteligent, creat pentru a te ajuta să înveți la o varietate de materii, inclusiv Matematică, Istorie și Limba Română.
     </div>
     """, unsafe_allow_html=True)
+    /* 🔝 HEADER NEGRU (bara de sus Streamlit) */
+[data-testid="stHeader"] {
+    background-color: #000000 !important;
+    color: white !important;
+}
+
+[data-testid="stHeader"] * {
+    color: white !important;
+}
     
     st.sidebar.markdown("<div class='sidebar-heading'>FUNCȚIONALITĂȚI</div>", unsafe_allow_html=True)
     st.sidebar.markdown("""
