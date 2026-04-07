@@ -584,6 +584,29 @@ if blocked:
                 .execute()
 
             st.session_state.bad_count = 0
+            st.success("✅ Chat deblocat!")
+            st.rerun()
+        else:
+            st.error("❌ Nu este o scuză validă.")
+else:
+    chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
+    if chat_input:
+        latest_updates = load_streamlit_updates()
+        on_chat_submit(chat_input, latest_updates)
+
+if blocked:
+    st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
+
+    apology_input = st.text_input("Scrie scuze aici:")
+
+    if apology_input:
+        if is_apology(apology_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
             st.success("Deblocat!")
             st.rerun()
         return
