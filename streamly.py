@@ -518,6 +518,16 @@ def main():
             padding-bottom: 0;
         }
         
+        div[data-testid="stHorizontalBlock"] {
+    background-color: #000000 !important;
+    padding: 1.5rem !important;
+    border-radius: 12px;
+}
+   div[data-testid="stHorizontalBlock"] {
+    background-color: #000000 !important;
+    padding: 12px 16px !important;
+    border-radius: 10px;
+}     
         /* Antet (Header) background white */
         [data-testid="stHorizontalBlock"] {
             background-color: #ffffff !important;
