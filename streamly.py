@@ -271,9 +271,7 @@ def render_sidebar():
 # MAIN
 # =========================
 def main():
-    """
-    Display Streamlit updates and handle the chat interface.
-    """
+
     initialize_session_state()
     status_placeholder = st.empty()
 
@@ -287,12 +285,52 @@ with status_placeholder.container():
     elif st.session_state.chat_status == "active":
         st.success("🟢 Chat activ")
 
+    # init conversație o singură dată
     if not st.session_state.history and not st.session_state.conversation_history:
         st.session_state.conversation_history = initialize_conversation()
 
-    # Apply custom CSS for the updated AI Teacher design (Blue/Orange theme based on the logo)
-    st.markdown(
-        """
+    # =========================
+    # CHAT LOGIC
+    # =========================
+
+    blocked = is_chat_blocked(st.session_state.session_id)
+
+    if blocked:
+        st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
+
+        apology_input = st.text_input("Scrie scuze aici:")
+
+        if apology_input:
+            if is_apology(apology_input):
+
+                supabase.table("chat_limits") \
+                    .delete() \
+                    .eq("session_id", st.session_state.session_id) \
+                    .execute()
+
+                st.session_state.bad_count = 0
+                st.success("✅ Chat deblocat!")
+                st.rerun()
+
+            else:
+                st.error("❌ Nu este o scuză validă.")
+
+    else:
+        chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
+
+        if chat_input:
+            latest_updates = load_streamlit_updates()
+            on_chat_submit(chat_input, latest_updates)
+
+    # =========================
+    # HISTORY (ALWAYS LAST)
+    # =========================
+
+    for message in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
+        role = message["role"]
+        avatar_image = "imgs/logo.jpg" if role == "assistant" else "👤"
+        with st.chat_message(role, avatar=avatar_image):
+            st.write(message["content"])
         <style>
         /* Main background and overall text */
         [data-testid="stAppViewContainer"] {
