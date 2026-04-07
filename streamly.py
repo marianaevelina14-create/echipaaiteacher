@@ -135,12 +135,22 @@ def get_latest_update_from_json(keyword, latest_updates):
     return "No updates found for the specified keyword."
 
 def on_chat_submit(chat_input, latest_updates):
+    st.session_state.warning_stage += 1
+st.session_state.bad_count += 1
+
+st.session_state.chat_status = "warning"
+st.session_state.warning_text = f"{st.session_state.warning_stage}/3"
+if st.session_state.bad_count >= 3:
+    block_chat(st.session_state.session_id)
+    st.session_state.chat_status = "blocked"
     user_input = chat_input.strip()
 
     # init counter
     if "bad_count" not in st.session_state:
-        st.session_state.bad_count = 0
 
+st.session_state.chat_status = "active"
+st.session_state.warning_stage = 0
+st.session_state.bad_count = 0
     # ⛔ BLOCKED CHECK
     if is_chat_blocked(st.session_state.session_id):
 
@@ -221,6 +231,11 @@ def on_chat_submit(chat_input, latest_updates):
         st.error(f"Eroare: {str(e)}")
         
 def initialize_session_state():
+    if "warning_stage" not in st.session_state:
+    st.session_state.warning_stage = 0
+
+if "chat_status" not in st.session_state:
+    st.session_state.chat_status = "active"
 
     # 🔥 FIX PERSISTENT SESSION ID
     if "session_id" not in st.session_state:
@@ -260,20 +275,14 @@ def main():
     Display Streamlit updates and handle the chat interface.
     """
     initialize_session_state()
-    render_sidebar()
+    status_placeholder = st.empty()
 
-    # load history
-    if not st.session_state.history:
-        st.session_state.history = [
-            {"role": m["role"], "content": m["content"]}
-            for m in load_messages(st.session_state.session_id)
-        ]
+with status_placeholder.container():
+    if st.session_state.chat_status == "warning":
+        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
 
-    # block check
-  if is_hard_blocked(st.session_state.session_id):
-        st.warning("⛔ Chat blocat")
-
-        apology = st.text_input("Scrie scuze:")
+    elif st.session_state.chat_status == "blocked":
+        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
 
     elif st.session_state.chat_status == "active":
         st.success("🟢 Chat activ")
