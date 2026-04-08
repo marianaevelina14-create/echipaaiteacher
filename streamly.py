@@ -103,13 +103,22 @@ def get_or_create_thread():
 # =========================
 def initialize_session_state():
     if "session_id" not in st.session_state:
-        sid = st.query_params.get("session_id")
+       import uuid
 
-        if not sid:
-            sid = str(uuid.uuid4())
-            st.query_params.update({"session_id": sid})
+def initialize_session_state():
+    if "warning_stage" not in st.session_state:
+        st.session_state.warning_stage = 0
 
-        st.session_state.session_id = sid
+    if "chat_status" not in st.session_state:
+        st.session_state.chat_status = "active"
+
+    # 🔥 FIX PERSISTENT SESSION ID
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = st.query_params.get("session_id", None)
+
+    if not st.session_state.session_id:
+        st.session_state.session_id = str(uuid.uuid4())
+        st.query_params["session_id"] = st.session_state.session_id
 
     if "history" not in st.session_state:
         st.session_state.history = []
