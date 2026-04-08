@@ -5,8 +5,9 @@ import json
 import requests
 import base64
 import uuid
-from datetime import datetime, timedelta
+
 from PIL import Image, ImageEnhance
+from datetime import datetime, timedelta
 from openai import OpenAI
 from supabase import create_client
 
@@ -15,7 +16,7 @@ from supabase import create_client
 # =========================
 logging.basicConfig(level=logging.INFO)
 
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
 ASSISTANT_ID = st.secrets["OPENAI_ASSISTANT_ID"]
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -45,36 +46,21 @@ def save_message(session_id, role, content):
 
 
 
-def is_chat_blocked(session_id):
-    try:
-        res = supabase.table("chat_limits") \
-            .select("*") \
-            .eq("session_id", session_id) \
-            .execute()
+def unblock_chat(session_id):
+    supabase.table("chat_limits").upsert({
+        "session_id": session_id,
+        "blocked": False,
+        "blocked_until": None
+    }).execute()
 
-        if not res.data:
-            return False
-
-        row = res.data[0]
-
-        if row.get("blocked_until"):
-            return datetime.utcnow() < datetime.fromisoformat(row["blocked_until"])
-
-        return row.get("blocked", False)
-
-    except:
-        return False
-
-def is_inappropriate(text):
-    bad_words = ["prost", "idiot", "stupid", "dracu"]
-
-def get_or_create_thread():
-    if "thread_id" not in st.session_state or not st.session_state.thread_id:
-        thread = client.beta.threads.create()
-        st.session_state.thread_id = thread.id
-    return st.session_state.thread_id
+    st.session_state.bad_count = 0
+    st.session_state.blocked_until = None
+    st.session_state.chat_status = "active"
 
 
+# =========================
+# SUPABASE
+# =========================
 def save_message(session_id, role, content):
     supabase.table("messages").insert({
         "session_id": session_id,
@@ -84,101 +70,109 @@ def save_message(session_id, role, content):
     }).execute()
 
 
-def unblock_chat():
-    st.session_state.bad_count = 0
-    st.session_state.blocked_until = None
-    st.session_state.chat_status = "active"
-
-    supabase.table("chat_limits") \
-        .delete() \
-        .eq("session_id", st.session_state.session_id) \
+def load_messages(session_id):
+    res = supabase.table("messages") \
+        .select("*") \
+        .eq("session_id", session_id) \
+        .order("created_at") \
         .execute()
+    return res.data
 
 
-def is_hard_blocked(session_id):
-    if st.session_state.blocked_until:
-        if datetime.utcnow() < st.session_state.blocked_until:
-            return True
+# =========================
+# OPENAI THREAD
+# =========================
+def get_or_create_thread():
+    if "thread_id" not in st.session_state or not st.session_state.thread_id:
+        thread = client.beta.threads.create()
+        st.session_state.thread_id = thread.id
+    return st.session_state.thread_id
 
-    return is_chat_blocked(session_id)
 
 # =========================
 # SESSION INIT
 # =========================
-if "session_id" not in st.session_state:
-    sid = st.query_params.get("session_id")
+def init_session():
+    if "session_id" not in st.session_state:
+        sid = st.query_params.get("session_id")
+        if not sid:
+            sid = str(uuid.uuid4())
+            st.query_params["session_id"] = sid
+        st.session_state.session_id = sid
 
-    if not sid:
-        sid = str(uuid.uuid4())
-        st.query_params["session_id"] = sid
+    if "history" not in st.session_state:
+        st.session_state.history = []
 
-    st.session_state.session_id = sid
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
 
-if "history" not in st.session_state:
-    st.session_state.history = []
+    if "chat_status" not in st.session_state:
+        st.session_state.chat_status = "active"
 
-if "bad_count" not in st.session_state:
-    st.session_state.bad_count = 0
+    if "blocked_until" not in st.session_state:
+        st.session_state.blocked_until = None
 
-if "chat_status" not in st.session_state:
-    st.session_state.chat_status = "active"
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = None
 
-if "blocked_until" not in st.session_state:
-    st.session_state.blocked_until = None
-
-if "thread_id" not in st.session_state:
-    st.session_state.thread_id = None
 
 # =========================
-# CHAT LOGIC
+# CHAT HANDLER
 # =========================
 def on_chat_submit(user_input):
     user_input = user_input.strip()
+    session_id = st.session_state.session_id
 
     # =========================
-    # 🔴 HARD BLOCK GATE
+    # BLOCKED FLOW
     # =========================
-    if is_hard_blocked(st.session_state.session_id):
+    if is_hard_blocked():
 
         if is_apology(user_input):
-            unblock_chat()
-            st.success("🟢 Mulțumesc de înțelegere. Cu ce te pot ajuta la limba română?")
+            unblock_chat(session_id)
+
+            st.success(
+                "Mulțumesc de înțelegere. Cu ce te pot ajuta la limba română?"
+            )
             return
 
-        st.warning("⛔ Chat-ul este închis. Cereți scuze și revino la lecție.")
+        st.error("Chat-ul este închis. Cereți scuze și revino la lecție.")
         return
 
     # =========================
-    # 2. BAD WORD CHECK
+    # BAD WORDS
     # =========================
     if is_inappropriate(user_input):
 
         st.session_state.bad_count += 1
 
         if st.session_state.bad_count == 1:
-            st.warning("Te rog să folosești un limbaj respectuos pentru a putea continua.")
+            st.warning("Te rog să folosești un limbaj respectuos.")
             return
 
         if st.session_state.bad_count == 2:
-            st.warning("Te rog să ai grijă la limbaj. Dacă vei continua, conversația va fi oprită.")
+            st.warning("Atenție la limbaj.")
             return
 
         if st.session_state.bad_count >= 3:
-            st.session_state.blocked_until = datetime.utcnow() + timedelta(minutes=5)
+            block_time = datetime.utcnow() + timedelta(minutes=5)
+
+            st.session_state.blocked_until = block_time
             st.session_state.chat_status = "blocked"
 
             supabase.table("chat_limits").upsert({
-                "session_id": st.session_state.session_id,
-                "blocked_until": st.session_state.blocked_until.isoformat()
+                "session_id": session_id,
+                "blocked": True,
+                "blocked_until": block_time.isoformat()
             }).execute()
 
-            st.error("⛔ Chat-ul este închis. Cereți scuze și revino la lecție.")
+            st.error("Chat-ul este închis. Cereți scuze și revino la lecție.")
             return
 
     # =========================
-    # 3. NORMAL FLOW
+    # NORMAL FLOW
     # =========================
-    save_message(st.session_state.session_id, "user", user_input)
+    save_message(session_id, "user", user_input)
 
     try:
         thread_id = get_or_create_thread()
@@ -194,17 +188,23 @@ def on_chat_submit(user_input):
             assistant_id=ASSISTANT_ID
         )
 
+        start = time.time()
+
         while True:
-            run_status = client.beta.threads.runs.retrieve(
+            status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
             )
 
-            if run_status.status == "completed":
+            if status.status == "completed":
                 break
 
-            if run_status.status == "failed":
+            if status.status == "failed":
                 st.error("Run failed")
+                return
+
+            if time.time() - start > 30:
+                st.error("Timeout AI")
                 return
 
             time.sleep(0.5)
@@ -219,21 +219,29 @@ def on_chat_submit(user_input):
 
         for msg in messages.data:
             if msg.role == "assistant":
-                parts = [c.text.value for c in msg.content if c.type == "text"]
+                parts = [
+                    c.text.value for c in msg.content
+                    if c.type == "text"
+                ]
                 if parts:
                     assistant_reply = "\n".join(parts)
                     break
 
-        save_message(st.session_state.session_id, "assistant", assistant_reply)
+        save_message(session_id, "assistant", assistant_reply)
 
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+        st.session_state.history.append(
+            {"role": "user", "content": user_input}
+        )
+        st.session_state.history.append(
+            {"role": "assistant", "content": assistant_reply}
+        )
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
 
+
 # =========================
-# MAIN APP
+# UI
 # =========================
 def main():
     """
@@ -242,12 +250,15 @@ def main():
     initialize_session_state()
     render_sidebar()
 
-    # 🔴 HARD BLOCK UI
-    if is_hard_blocked(st.session_state.session_id):
+    # load history
+    if not st.session_state.history:
+        st.session_state.history = load_messages(st.session_state.session_id)
 
-        st.error("⛔ Chat-ul este închis. Cereți scuze și revino la lecție.")
+    # block screen
+    if is_hard_blocked():
+        st.warning("⛔ Chat blocat")
 
-        apology = st.text_input("Scrie scuze:")
+        apology = st.text_input("Scrie scuze pentru deblocare:")
 
     elif st.session_state.chat_status == "active":
         st.success("🟢 Chat activ")
@@ -539,15 +550,16 @@ if blocked:
 
         return
 
-    # CHAT INPUT
+    # input
     user_input = st.chat_input("Scrie mesaj...")
 
     if user_input:
         on_chat_submit(user_input)
 
-    # HISTORY
-    for msg in st.session_state.history[-20:]:
-        with st.chat_message(msg["role"]):
+    # history render
+    for msg in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
+        avatar = "👤" if msg["role"] == "user" else "🤖"
+        with st.chat_message(msg["role"], avatar=avatar):
             st.write(msg["content"])
 
 
