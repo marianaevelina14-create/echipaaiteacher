@@ -62,12 +62,17 @@ def save_message(session_id, role, content):
 def is_chat_blocked(session_id):
     try:
         response = supabase.table("chat_limits") \
-            .select("blocked_until") \
+            .select("blocked") \
             .eq("session_id", session_id) \
             .execute()
 
         if not response.data:
             return False
+
+        return response.data[0].get("blocked", False)
+
+    except Exception:
+        return False
 
         blocked_until_str = response.data[0]["blocked_until"]
         blocked_until = datetime.fromisoformat(blocked_until_str)
@@ -277,13 +282,14 @@ def is_hard_blocked(session_id):
 
     # 2. check supabase
     return is_chat_blocked(session_id)
-def on_chat_submit(user_input):
+    def on_chat_submit(user_input):
     user_input = user_input.strip()
 
     # =========================
-    # 🔴 HARD BLOCK GATE (IMPORTANT)
+    # 🔴 HARD BLOCK GATE
     # =========================
     if is_hard_blocked(st.session_state.session_id):
+
         if is_apology(user_input):
             supabase.table("chat_limits") \
                 .delete() \
@@ -294,11 +300,10 @@ def on_chat_submit(user_input):
             st.session_state.bad_count = 0
             st.session_state.blocked_until = None
 
-            st.success("🟢 Chat deblocat!")
+            st.success("🟢 Chat deblocat")
             return
 
-        st.warning("⛔ Chat blocat. Scrie scuze pentru deblocare.")
-        return
+        return  # 🔥 IGNORE TOTAL
 
     # =========================
     # 2. BAD WORD CHECK
@@ -306,47 +311,50 @@ def on_chat_submit(user_input):
     if is_inappropriate(user_input):
 
         st.session_state.bad_count += 1
-        st.session_state.warning_stage = st.session_state.bad_count
 
-        if st.session_state.bad_count < 3:
-            st.warning("⚠️ Limbaj neadecvat. Te rog să respecți regulile.")
+        if st.session_state.bad_count == 1:
+            st.warning("Te rog să folosești un limbaj respectuos pentru a putea continua.")
             return
 
-       block_time = datetime.utcnow() + timedelta(minutes=5)
+        if st.session_state.bad_count == 2:
+            st.warning("Te rog să ai grijă la limbaj. Dacă vei continua, conversația va fi oprită.")
+            return
 
-st.session_state.blocked_until = block_time
-st.session_state.chat_status = "blocked"
+        if st.session_state.bad_count >= 3:
+            block_time = datetime.utcnow() + timedelta(minutes=5)
 
-supabase.table("chat_limits").upsert({
-    "session_id": st.session_state.session_id,
-    "blocked_until": block_time.isoformat()
-}).execute()
+            st.session_state.blocked_until = block_time
+            st.session_state.chat_status = "blocked"
 
-        st.error("⛔ Chat blocat. Cereți scuze pentru a continua.")
-        return
+            supabase.table("chat_limits").upsert({
+                "session_id": st.session_state.session_id,
+                "blocked_until": block_time.isoformat()
+            }).execute()
+
+            st.error("⛔ Chat-ul este blocat. Cereți scuze și revino la lecție.")
+            return
 
     # =========================
-    # 3. SAVE USER MESSAGE
+    # 3. CONTINUĂ NORMAL
     # =========================
     save_message(st.session_state.session_id, "user", user_input)
 
     try:
         thread_id = get_or_create_thread()
 
-        # send message
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_input
         )
 
-        # run assistant (SAFE VERSION)
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
-        # wait until run completes
+
         start_time = time.time()
+
         while True:
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
@@ -365,7 +373,10 @@ supabase.table("chat_limits").upsert({
                 return
 
             time.sleep(0.5)
-        # get messages
+
+        # =========================
+        # GET MESSAGES (O SINGURĂ DATĂ)
+        # =========================
         messages = client.beta.threads.messages.list(
             thread_id=thread_id,
             order="desc",
@@ -376,31 +387,19 @@ supabase.table("chat_limits").upsert({
 
         for msg in messages.data:
             if msg.role == "assistant":
-                parts = [
-                    c.text.value for c in msg.content
-                    if c.type == "text"
-                ]
+                parts = [c.text.value for c in msg.content if c.type == "text"]
                 if parts:
                     assistant_reply = "\n".join(parts)
                     break
 
-        # =========================
-        # 5. SAVE ASSISTANT MESSAGE
-        # =========================
+        # SAVE + UI
         save_message(st.session_state.session_id, "assistant", assistant_reply)
 
-        # =========================
-        # 6. UPDATE UI HISTORY
-        # =========================
         st.session_state.history.append({"role": "user", "content": user_input})
         st.session_state.history.append({"role": "assistant", "content": assistant_reply})
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
-       
-def is_apology(text):
-    words = ["scuze", "imi pare rau", "îmi pare rău", "sorry"]
-    return any(w in text.lower() for w in words)
 
 
 def is_inappropriate(text):
@@ -410,7 +409,7 @@ def is_inappropriate(text):
 def block_chat(session_id):
     supabase.table("chat_limits").upsert({
         "session_id": session_id,
-        "blocked_until": (datetime.utcnow() + timedelta(minutes=5)).isoformat()
+        "blocked": True
     }).execute()
 
 
