@@ -269,14 +269,21 @@ def get_latest_update_from_json(keyword, latest_updates):
                 if keyword.lower() in key.lower() or keyword.lower() in value.lower():
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
+def is_hard_blocked(session_id):
+    # 1. check local state
+    if st.session_state.blocked_until:
+        if datetime.utcnow() < st.session_state.blocked_until:
+            return True
 
+    # 2. check supabase
+    return is_chat_blocked(session_id)
 def on_chat_submit(user_input):
     user_input = user_input.strip()
-    # =========================
-    # 1. BLOCK CHECK
-    # =========================
-    if is_chat_blocked(st.session_state.session_id):
 
+    # =========================
+    # 🔴 HARD BLOCK GATE (IMPORTANT)
+    # =========================
+    if is_hard_blocked(st.session_state.session_id):
         if is_apology(user_input):
             supabase.table("chat_limits") \
                 .delete() \
@@ -285,12 +292,12 @@ def on_chat_submit(user_input):
 
             st.session_state.chat_status = "active"
             st.session_state.bad_count = 0
-            st.session_state.warning_stage = 0
+            st.session_state.blocked_until = None
 
             st.success("🟢 Chat deblocat!")
             return
 
-        st.warning("⛔ Chat blocat. Cereți scuze pentru a continua.")
+        st.warning("⛔ Chat blocat. Scrie scuze pentru deblocare.")
         return
 
     # =========================
@@ -305,8 +312,15 @@ def on_chat_submit(user_input):
             st.warning("⚠️ Limbaj neadecvat. Te rog să respecți regulile.")
             return
 
-        block_chat(st.session_state.session_id)
-        st.session_state.chat_status = "blocked"
+       block_time = datetime.utcnow() + timedelta(minutes=5)
+
+st.session_state.blocked_until = block_time
+st.session_state.chat_status = "blocked"
+
+supabase.table("chat_limits").upsert({
+    "session_id": st.session_state.session_id,
+    "blocked_until": block_time.isoformat()
+}).execute()
 
         st.error("⛔ Chat blocat. Cereți scuze pentru a continua.")
         return
@@ -331,8 +345,7 @@ def on_chat_submit(user_input):
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
-
-                      # wait until run completes
+        # wait until run completes
         start_time = time.time()
         while True:
             run_status = client.beta.threads.runs.retrieve(
@@ -429,8 +442,7 @@ def get_or_create_thread():
 # =========================
 # SESSION INIT
 # =========================
-    def initialize_session_state():
-
+def initialize_session_state():
     if "session_id" not in st.session_state:
         sid = st.query_params.get("session_id")
 
@@ -451,7 +463,9 @@ def get_or_create_thread():
 
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = None
-
+ # ✅ ADĂUGĂ ASTA
+    if "blocked_until" not in st.session_state:
+        st.session_state.blocked_until = None
 def render_sidebar():
     st.sidebar.title("AI Teacher")
     st.sidebar.write("Asistent educațional AI")
@@ -480,7 +494,7 @@ def main():
         ]
 
     # block check
-    if is_chat_blocked(st.session_state.session_id):
+  if is_hard_blocked(st.session_state.session_id):
         st.warning("⛔ Chat blocat")
 
         apology = st.text_input("Scrie scuze:")
@@ -775,6 +789,9 @@ if blocked:
         return
 
     # chat input
+   user_input = None
+
+if not is_hard_blocked(st.session_state.session_id):
     user_input = st.chat_input("Scrie mesaj...")
 
     if user_input:
