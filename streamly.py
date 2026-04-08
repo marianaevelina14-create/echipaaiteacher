@@ -690,9 +690,8 @@ def render_sidebar():
     st.sidebar.write("Asistent educațional AI")
 
     st.sidebar.markdown("### Materii")
-   
     st.sidebar.write("Română")
-
+    
 
 # =========================
 # MAIN
