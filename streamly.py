@@ -315,26 +315,18 @@ def get_latest_update_from_json(keyword, latest_updates):
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
 
-def on_chat_submit(chat_input, latest_updates):
 
-    import uuid
+
+  def on_chat_submit(chat_input, latest_updates):
 
     user_input = chat_input.strip()
 
-    # 🔐 INIT SESSION STATE SAFE
-    if "bad_count" not in st.session_state:
-        st.session_state.bad_count = 0
+    # =========================
+    # 1. HARD BLOCK CHECK (SUPABASE = SOURCE OF TRUTH)
+    # =========================
+    if is_chat_blocked(st.session_state.session_id):
 
-    if "warning_stage" not in st.session_state:
-        st.session_state.warning_stage = 0
-
-    if "chat_status" not in st.session_state:
-        st.session_state.chat_status = "active"
-
-    # ⛔ BLOCKED STATE CHECK (HARD LOCK)
-    if st.session_state.chat_status == "blocked":
-
-        # doar scuzele sunt acceptate
+        # doar scuzele deblochează
         if is_apology(user_input):
 
             supabase.table("chat_limits") \
@@ -349,35 +341,41 @@ def on_chat_submit(chat_input, latest_updates):
             st.success("🟢 Chat deblocat!")
             return
 
-        st.warning("⛔ Chat-ul este blocat. Cereți scuze și revino la lecție.")
+        st.warning("⛔ Chat blocat. Cereți scuze pentru a continua.")
         return
 
-    # ⚠️ CHECK BAD WORDS
+    # =========================
+    # 2. BAD WORD CHECK
+    # =========================
     if is_inappropriate(user_input):
 
         st.session_state.bad_count += 1
         st.session_state.warning_stage = st.session_state.bad_count
 
-        # 🔴 BLOCK AT 3
-        if st.session_state.bad_count >= 3:
-
-            block_chat(st.session_state.session_id)
-            st.session_state.chat_status = "blocked"
-
-            st.error("⛔ Chat-ul este blocat. Cereți scuze și revino la lecție.")
+        # warning 1-2
+        if st.session_state.bad_count < 3:
+            st.warning("⚠️ Limbaj neadecvat. Te rog să respecți regulile.")
             return
 
-        # ⚠️ WARNING (fără afișare progres în mesaj dacă nu vrei)
-        st.warning("⚠️ Limbaj neadecvat. Te rog să respecți regulile.")
+        # BLOCK AT 3
+        block_chat(st.session_state.session_id)
+
+        st.session_state.chat_status = "blocked"
+
+        st.error("⛔ Chat blocat. Cereți scuze pentru a continua.")
         return
 
-    # 💾 SAVE USER MESSAGE (IMPORTANT - ÎNAINTE DE AI)
+    # =========================
+    # 3. SAVE USER MESSAGE
+    # =========================
     save_message(st.session_state.session_id, "user", user_input)
 
     try:
         assistant_reply = ""
 
-        # 📌 SPECIAL CASE
+        # =========================
+        # 4. SPECIAL CASE
+        # =========================
         if "latest updates" in user_input.lower():
             assistant_reply = "Here are the latest Streamlit updates."
 
@@ -411,19 +409,41 @@ def on_chat_submit(chat_input, latest_updates):
                         assistant_reply = "\n".join(parts)
                         break
 
-        # 💾 SAVE ASSISTANT MESSAGE
+        # =========================
+        # 5. SAVE ASSISTANT MESSAGE
+        # =========================
         save_message(st.session_state.session_id, "assistant", assistant_reply)
 
-        # 🧠 UPDATE UI HISTORY
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+        # =========================
+        # 6. UPDATE UI HISTORY
+        # =========================
+        st.session_state.history.append(
+            {"role": "user", "content": user_input}
+        )
+        st.session_state.history.append(
+            {"role": "assistant", "content": assistant_reply}
+        )
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
-def initialize_session_state():
+    # ⛔ BLOCKED STATE CHECK (HARD LOCK)
+    if st.session_state.chat_status == "blocked":
 
+       
+def initialize_session_state():
+    if "warning_stage" not in st.session_state:
+        st.session_state.warning_stage = 0
+
+    if "chat_status" not in st.session_state:
+        st.session_state.chat_status = "active"
+
+    # 🔥 FIX PERSISTENT SESSION ID
     if "session_id" not in st.session_state:
-        st.session_state.session_id = str(time.time())
+        st.session_state.session_id = st.query_params.get("session_id", None)
+
+    if not st.session_state.session_id:
+        st.session_state.session_id = str(uuid.uuid4())
+        st.query_params["session_id"] = st.session_state.session_id
 
     if "history" not in st.session_state:
         st.session_state.history = []
