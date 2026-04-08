@@ -134,12 +134,40 @@ st.set_page_config(
     menu_items={
         "Get help": "https://github.com/AdieLaine/Streamly",
         "Report a bug": "https://github.com/AdieLaine/Streamly",
-        "About": """
-            ## AI Teacher Web App
-            An AI-powered educational assistant designed to help you learn.
-        """
+        "About": "AI Teacher Web App"
     }
 )
+import uuid
+
+# =========================
+# SESSION ID (PERSISTENT)
+# =========================
+if "session_id" not in st.session_state:
+    st.session_state.session_id = st.query_params.get("session_id", None)
+
+if not st.session_state.session_id:
+    st.session_state.session_id = str(uuid.uuid4())
+    st.query_params["session_id"] = st.session_state.session_id
+
+
+# =========================
+# SESSION STATE INIT
+# =========================
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = None
+
+if "bad_count" not in st.session_state:
+    st.session_state.bad_count = 0
+
+if "warning_stage" not in st.session_state:
+    st.session_state.warning_stage = 0
+
+if "chat_status" not in st.session_state:
+    st.session_state.chat_status = "active"
+   
 
 @st.cache_data(show_spinner=False)
 def img_to_base64(image_path):
@@ -394,6 +422,26 @@ def main():
     Display Streamlit updates and handle the chat interface.
     """
     initialize_session_state()
+    status_placeholder = st.empty()
+
+    # 🔥 LOAD ISTORIC DIN SUPABASE
+    if not st.session_state.history:
+        messages = load_messages(st.session_state.session_id)
+
+        for msg in messages:
+            st.session_state.history.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+with status_placeholder.container():
+    if st.session_state.chat_status == "warning":
+        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
+
+    elif st.session_state.chat_status == "blocked":
+        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
+
+    elif st.session_state.chat_status == "active":
+        st.success("🟢 Chat activ")
 
     if not st.session_state.history and not st.session_state.conversation_history:
         st.session_state.conversation_history = initialize_conversation()
@@ -523,11 +571,15 @@ def main():
     padding: 1.5rem !important;
     border-radius: 12px;
 }
-   div[data-testid="stHorizontalBlock"] {
+  st.markdown("""
+<style>
+div[data-testid="stHorizontalBlock"] {
     background-color: #000000 !important;
     padding: 12px 16px !important;
-    border-radius: 10px;
-}     
+    border-radius: 10px !important;
+}
+</style>
+""", unsafe_allow_html=True)
         /* Antet (Header) background white */
         [data-testid="stHorizontalBlock"] {
             background-color: #ffffff !important;
