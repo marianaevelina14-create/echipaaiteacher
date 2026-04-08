@@ -316,42 +316,62 @@ def get_latest_update_from_json(keyword, latest_updates):
     return "No updates found for the specified keyword."
 
 def on_chat_submit(chat_input, latest_updates):
+
+    import uuid
+
     user_input = chat_input.strip()
 
-    # init counter
+    # 🔐 INIT SESSION STATE SAFE
     if "bad_count" not in st.session_state:
         st.session_state.bad_count = 0
 
-    # ⛔ BLOCKED CHECK
-    if is_chat_blocked(st.session_state.session_id):
+    if "warning_stage" not in st.session_state:
+        st.session_state.warning_stage = 0
 
-        if is_apology(user_input) or is_educational(user_input):
+    if "chat_status" not in st.session_state:
+        st.session_state.chat_status = "active"
+
+    # ⛔ BLOCKED STATE CHECK (HARD LOCK)
+    if st.session_state.chat_status == "blocked":
+
+        # doar scuzele sunt acceptate
+        if is_apology(user_input):
+
             supabase.table("chat_limits") \
                 .delete() \
                 .eq("session_id", st.session_state.session_id) \
                 .execute()
 
+            st.session_state.chat_status = "active"
             st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat!")
+            st.session_state.warning_stage = 0
+
+            st.success("🟢 Chat deblocat!")
             return
 
-        st.warning("⛔ Chat blocat. Spune scuze sau întrebare educațională.")
+        st.warning("⛔ Chat-ul este blocat. Cereți scuze și revino la lecție.")
         return
 
-    # ⚠️ BAD WORDS
+    # ⚠️ CHECK BAD WORDS
     if is_inappropriate(user_input):
-        st.session_state.bad_count += 1
 
+        st.session_state.bad_count += 1
+        st.session_state.warning_stage = st.session_state.bad_count
+
+        # 🔴 BLOCK AT 3
         if st.session_state.bad_count >= 3:
+
             block_chat(st.session_state.session_id)
-            st.session_state.bad_count = 0
-            st.error("⛔ Blocat 5 minute.")
+            st.session_state.chat_status = "blocked"
+
+            st.error("⛔ Chat-ul este blocat. Cereți scuze și revino la lecție.")
             return
 
-        st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
+        # ⚠️ WARNING (fără afișare progres în mesaj dacă nu vrei)
+        st.warning("⚠️ Limbaj neadecvat. Te rog să respecți regulile.")
         return
 
-    # 💾 SAVE USER (1 SINGURĂ DATĂ)
+    # 💾 SAVE USER MESSAGE (IMPORTANT - ÎNAINTE DE AI)
     save_message(st.session_state.session_id, "user", user_input)
 
     try:
@@ -391,16 +411,15 @@ def on_chat_submit(chat_input, latest_updates):
                         assistant_reply = "\n".join(parts)
                         break
 
-        # 💾 SAVE ASSISTANT (1 SINGURĂ DATĂ)
+        # 💾 SAVE ASSISTANT MESSAGE
         save_message(st.session_state.session_id, "assistant", assistant_reply)
 
-        # 🧠 UPDATE UI (1 SINGURĂ DATĂ)
+        # 🧠 UPDATE UI HISTORY
         st.session_state.history.append({"role": "user", "content": user_input})
         st.session_state.history.append({"role": "assistant", "content": assistant_reply})
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
-        
 def initialize_session_state():
 
     if "session_id" not in st.session_state:
