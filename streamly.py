@@ -75,6 +75,12 @@ def save_message(session_id, role, content):
         "created_at": datetime.utcnow().isoformat()
     }).execute()
 
+def load_messages(session_id):
+    response = supabase.table("messages") \
+        .select("*") \
+        .eq("session_id", session_id) \
+        .order("created_at", desc=False) \
+        .execute()
 
 def load_messages(session_id):
     res = supabase.table("messages") \
