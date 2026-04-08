@@ -39,12 +39,23 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 from datetime import datetime, timedelta
 
 def save_message(session_id, role, content):
-    supabase.table("messages").insert({
-        "session_id": session_id,
-        "role": role,
-        "content": content,
-        "created_at": datetime.utcnow().isoformat()
-    }).execute()
+    try:
+        response = supabase.table("messages").insert({
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+
+        # IMPORTANT: verificare eroare
+        if response.data is None:
+            st.error(f"Supabase insert failed: {response}")
+
+        return response
+
+    except Exception as e:
+        st.error(f"Supabase error: {str(e)}")
+        return None
 
 
 
@@ -317,18 +328,15 @@ def get_latest_update_from_json(keyword, latest_updates):
 
 
 
-  def on_chat_submit(chat_input, latest_updates):
-
+ def on_chat_submit(chat_input, latest_updates):
     user_input = chat_input.strip()
 
     # =========================
-    # 1. HARD BLOCK CHECK (SUPABASE = SOURCE OF TRUTH)
+    # 1. BLOCK CHECK
     # =========================
     if is_chat_blocked(st.session_state.session_id):
 
-        # doar scuzele deblochează
         if is_apology(user_input):
-
             supabase.table("chat_limits") \
                 .delete() \
                 .eq("session_id", st.session_state.session_id) \
@@ -352,14 +360,11 @@ def get_latest_update_from_json(keyword, latest_updates):
         st.session_state.bad_count += 1
         st.session_state.warning_stage = st.session_state.bad_count
 
-        # warning 1-2
         if st.session_state.bad_count < 3:
             st.warning("⚠️ Limbaj neadecvat. Te rog să respecți regulile.")
             return
 
-        # BLOCK AT 3
         block_chat(st.session_state.session_id)
-
         st.session_state.chat_status = "blocked"
 
         st.error("⛔ Chat blocat. Cereți scuze pentru a continua.")
@@ -371,43 +376,55 @@ def get_latest_update_from_json(keyword, latest_updates):
     save_message(st.session_state.session_id, "user", user_input)
 
     try:
-        assistant_reply = ""
+        thread_id = get_or_create_thread()
 
-        # =========================
-        # 4. SPECIAL CASE
-        # =========================
-        if "latest updates" in user_input.lower():
-            assistant_reply = "Here are the latest Streamlit updates."
+        # send message
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_input
+        )
 
-        else:
-            thread_id = get_or_create_thread()
+        # run assistant (SAFE VERSION)
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID
+        )
 
-            client.beta.threads.messages.create(
+        # wait until run completes
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
-                role="user",
-                content=user_input
+                run_id=run.id
             )
 
-            run = client.beta.threads.runs.create_and_poll(
-                thread_id=thread_id,
-                assistant_id=ASSISTANT_ID,
-                tools=[{"type": "file_search"}]
-            )
+            if run_status.status == "completed":
+                break
 
-            messages = client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=10
-            )
+            if run_status.status == "failed":
+                st.error("Run failed.")
+                return
 
-            assistant_reply = "Nu am primit răspuns."
+            time.sleep(0.5)
 
-            for msg in messages.data:
-                if msg.role == "assistant":
-                    parts = [c.text.value for c in msg.content if c.type == "text"]
-                    if parts:
-                        assistant_reply = "\n".join(parts)
-                        break
+        # get messages
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=10
+        )
+
+        assistant_reply = "Nu am primit răspuns."
+
+        for msg in messages.data:
+            if msg.role == "assistant":
+                parts = [
+                    c.text.value for c in msg.content
+                    if c.type == "text"
+                ]
+                if parts:
+                    assistant_reply = "\n".join(parts)
+                    break
 
         # =========================
         # 5. SAVE ASSISTANT MESSAGE
@@ -417,67 +434,290 @@ def get_latest_update_from_json(keyword, latest_updates):
         # =========================
         # 6. UPDATE UI HISTORY
         # =========================
-        st.session_state.history.append(
-            {"role": "user", "content": user_input}
-        )
-        st.session_state.history.append(
-            {"role": "assistant", "content": assistant_reply}
-        )
+        st.session_state.history.append({"role": "user", "content": user_input})
+        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
 
     except Exception as e:
-        st.error(f"Eroare: {str(e)}")
-    # ⛔ BLOCKED STATE CHECK (HARD LOCK)
-    if st.session_state.chat_status == "blocked":
-
-       
-def initialize_session_state():
+        st.error(f"Eroare: {str(e)}")def initialize_session_state():
     if "warning_stage" not in st.session_state:
         st.session_state.warning_stage = 0
 
     if "chat_status" not in st.session_state:
         st.session_state.chat_status = "active"
 
-    # 🔥 FIX PERSISTENT SESSION ID
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = st.query_params.get("session_id", None)
+    # SESSION ID (SAFE VERSION)
+    session_id = st.query_params.get("session_id")
 
-    if not st.session_state.session_id:
-        st.session_state.session_id = str(uuid.uuid4())
-        st.query_params["session_id"] = st.session_state.session_id
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        st.query_params.update({"session_id": session_id})
+
+    st.session_state.session_id = session_id
+
+    # HISTORY
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    # THREAD
+    if "thread_id" not in st.session_state:
+        st.session_state.thread_id = None
+
+    # BAD WORD COUNTER
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
+
+    # OPTIONAL (îți lipsește dar îl folosești mai jos în cod)
+    if "conversation_history" not in st.session_state:
+        st.session_state.conversation_history = []
+    import streamlit as st
+import logging
+import time
+import json
+import requests
+import base64
+import uuid
+from datetime import datetime, timedelta
+from openai import OpenAI
+from supabase import create_client
+from PIL import Image, ImageEnhance
+
+# =========================
+# CONFIG
+# =========================
+logging.basicConfig(level=logging.INFO)
+
+NUMBER_OF_MESSAGES_TO_DISPLAY = 20
+API_DOCS_URL = "https://docs.streamlit.io/library/api-reference"
+
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+ASSISTANT_ID = st.secrets["OPENAI_ASSISTANT_ID"]
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+supabase = create_client(
+    st.secrets["SUPABASE_URL"],
+    st.secrets["SUPABASE_KEY"]
+)
+
+# =========================
+# STREAMLIT CONFIG
+# =========================
+st.set_page_config(
+    page_title="AI Teacher",
+    page_icon="imgs/logo.jpg",
+    layout="wide"
+)
+
+# =========================
+# CSS (SEPARAT)
+# =========================
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] {
+    background-color: #f0f6fc;
+}
+
+[data-testid="stChatMessage"] {
+    background: transparent !important;
+    border: none !important;
+}
+
+[data-testid="stChatMessageContent"] * {
+    color: #000 !important;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #1b3a97;
+    color: white;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# HELPERS
+# =========================
+def is_apology(text):
+    words = ["scuze", "imi pare rau", "îmi pare rău", "sorry"]
+    return any(w in text.lower() for w in words)
+
+
+def is_inappropriate(text):
+    bad = ["prost", "idiot", "stupid", "dracu"]
+    return any(w in text.lower() for w in bad)
+
+
+def is_chat_blocked(session_id):
+    response = supabase.table("chat_limits") \
+        .select("*") \
+        .eq("session_id", session_id) \
+        .execute()
+
+    if response.data:
+        blocked_until = datetime.fromisoformat(response.data[0]["blocked_until"])
+        return datetime.utcnow() < blocked_until
+
+    return False
+
+
+def block_chat(session_id):
+    supabase.table("chat_limits").upsert({
+        "session_id": session_id,
+        "blocked_until": (datetime.utcnow() + timedelta(minutes=5)).isoformat()
+    }).execute()
+
+
+def save_message(session_id, role, content):
+    supabase.table("messages").insert({
+        "session_id": session_id,
+        "role": role,
+        "content": content,
+        "created_at": datetime.utcnow().isoformat()
+    }).execute()
+
+
+def load_messages(session_id):
+    res = supabase.table("messages") \
+        .select("*") \
+        .eq("session_id", session_id) \
+        .order("created_at") \
+        .execute()
+    return res.data
+
+
+def get_or_create_thread():
+    if "thread_id" not in st.session_state or not st.session_state.thread_id:
+        thread = client.beta.threads.create()
+        st.session_state.thread_id = thread.id
+    return st.session_state.thread_id
+
+
+# =========================
+# SESSION INIT
+# =========================
+def initialize_session_state():
+
+    if "session_id" not in st.session_state:
+        sid = st.query_params.get("session_id")
+        if not sid:
+            sid = str(uuid.uuid4())
+            st.query_params["session_id"] = sid
+        st.session_state.session_id = sid
 
     if "history" not in st.session_state:
         st.session_state.history = []
 
-    if "conversation_history" not in st.session_state:
-        st.session_state.conversation_history = []
+    if "bad_count" not in st.session_state:
+        st.session_state.bad_count = 0
+
+    if "chat_status" not in st.session_state:
+        st.session_state.chat_status = "active"
 
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = None
 
-    if "bad_count" not in st.session_state:
-        st.session_state.bad_count = 0
+
+# =========================
+# CHAT LOGIC
+# =========================
+def on_chat_submit(user_input):
+
+    if is_chat_blocked(st.session_state.session_id):
+        st.warning("⛔ Chat blocat")
+        return
+
+    if is_inappropriate(user_input):
+        st.session_state.bad_count += 1
+
+        if st.session_state.bad_count >= 3:
+            block_chat(st.session_state.session_id)
+            st.error("⛔ Chat blocat 5 min")
+            return
+
+        st.warning("⚠️ Limbaj neadecvat")
+        return
+
+    save_message(st.session_state.session_id, "user", user_input)
+
+    thread_id = get_or_create_thread()
+
+    client.beta.threads.messages.create(
+        thread_id=thread_id,
+        role="user",
+        content=user_input
+    )
+
+    run = client.beta.threads.runs.create(
+        thread_id=thread_id,
+        assistant_id=ASSISTANT_ID
+    )
+
+    while True:
+        status = client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run.id
+        )
+
+        if status.status == "completed":
+            break
+
+        time.sleep(0.5)
+
+    messages = client.beta.threads.messages.list(
+        thread_id=thread_id,
+        order="desc",
+        limit=5
+    )
+
+    reply = "No response"
+
+    for m in messages.data:
+        if m.role == "assistant":
+            reply = "\n".join([c.text.value for c in m.content if c.type == "text"])
+            break
+
+    save_message(st.session_state.session_id, "assistant", reply)
+
+    st.session_state.history.append({"role": "user", "content": user_input})
+    st.session_state.history.append({"role": "assistant", "content": reply})
+
+
+# =========================
+# SIDEBAR
+# =========================
+def render_sidebar():
+    st.sidebar.title("AI Teacher")
+    st.sidebar.write("Asistent educațional AI")
+
+    st.sidebar.markdown("### Materii")
+   
+    st.sidebar.write("Română")
+
+
+# =========================
+# MAIN
+# =========================
 def main():
     """
     Display Streamlit updates and handle the chat interface.
     """
     initialize_session_state()
-    status_placeholder = st.empty()
+    render_sidebar()
 
-    # 🔥 LOAD ISTORIC DIN SUPABASE
+    st.title("Chat AI Teacher")
+
+    # load history
     if not st.session_state.history:
-        messages = load_messages(st.session_state.session_id)
+        st.session_state.history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in load_messages(st.session_state.session_id)
+        ]
 
-        for msg in messages:
-            st.session_state.history.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-with status_placeholder.container():
-    if st.session_state.chat_status == "warning":
-        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
+    # block check
+    if is_chat_blocked(st.session_state.session_id):
+        st.warning("⛔ Chat blocat")
 
-    elif st.session_state.chat_status == "blocked":
-        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
+        apology = st.text_input("Scrie scuze:")
 
     elif st.session_state.chat_status == "active":
         st.success("🟢 Chat activ")
@@ -748,14 +988,42 @@ div[data-testid="stHorizontalBlock"] {
     if chat_input:
         latest_updates = load_streamlit_updates()
         on_chat_submit(chat_input, latest_updates)
+   # 🔒 verificăm dacă chat-ul este blocat
+blocked = is_chat_blocked(st.session_state.session_id)
 
-    # Display chat history sequentially
-    for message in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
-        role = message["role"]
-        # Use logo for assistant, default for user
-        avatar_image = "imgs/logo.jpg" if role == "assistant" else "👤"
-        with st.chat_message(role, avatar=avatar_image):
-            st.write(message["content"])
+if blocked:
+    st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
 
+    apology_input = st.text_input("Scrie scuze aici:")
+
+    if apology_input:
+        if is_apology(apology_input):
+            supabase.table("chat_limits") \
+                .delete() \
+                .eq("session_id", st.session_state.session_id) \
+                .execute()
+
+            st.session_state.bad_count = 0
+            st.success("Deblocat!")
+            st.rerun()
+        return
+
+    # chat input
+    user_input = st.chat_input("Scrie mesaj...")
+
+    if user_input:
+        on_chat_submit(user_input)
+
+    # history
+    for msg in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
+        avatar = "👤" if msg["role"] == "user" else "imgs/logo.jpg"
+
+        with st.chat_message(msg["role"], avatar=avatar):
+            st.write(msg["content"])
+
+
+# =========================
+# RUN APP
+# =========================
 if __name__ == "__main__":
     main()
