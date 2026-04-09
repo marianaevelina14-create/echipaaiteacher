@@ -101,17 +101,6 @@ def is_apology(text):
 
 
 def on_chat_submit(user_input):
-
-    user_input = user_input.strip()
-
-    if st.session_state.chat_status == "blocked":
-        if is_apology(user_input):
-            st.session_state.chat_status = "active"
-            st.session_state.bad_count = 0
-            st.success("🟢 Chat deblocat")
-            st.rerun()
-            return
-
         st.error("⛔ Chat blocat. Cereți scuze.")
         return
 
@@ -126,7 +115,7 @@ def on_chat_submit(user_input):
             return
         else:
             st.session_state.chat_status = "blocked"
-            st.error("⛔ Chat blocat.")
+            st.error("⛔ Chat blocat.Cereti scuze si revino la lectie")
             return
 
     st.session_state.history.append({"role": "user", "content": user_input})
