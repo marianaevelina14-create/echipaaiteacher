@@ -67,20 +67,6 @@ def unblock_chat(session_id):
     }).execute()
 
 
-def save_message(session_id, role, content):
-    supabase.table("messages").insert({
-        "session_id": session_id,
-        "role": role,
-        "content": content,
-        "created_at": datetime.utcnow().isoformat()
-    }).execute()
-
-def load_messages(session_id):
-    response = supabase.table("messages") \
-        .select("*") \
-        .eq("session_id", session_id) \
-        .order("created_at", desc=False) \
-        .execute()
 
 def load_messages(session_id):
     res = supabase.table("messages") \
@@ -101,31 +87,7 @@ def get_or_create_thread():
 # =========================
 # SESSION INIT
 # =========================
-def initialize_session_state():
-    if "session_id" not in st.session_state:
-       import uuid
 
-    Returns:
-    - str: Formatted update messages.
-    """
-    formatted_message = []
-    highlights = latest_updates.get("Highlights", {})
-    version_info = highlights.get("Version 1.36", {})
-    if version_info:
-        description = version_info.get("Description", "No description available.")
-        formatted_message.append(f"- **Version 1.36**: {description}")
-
-    for category, updates in latest_updates.items():
-        formatted_message.append(f"**{category}**:")
-        for sub_key, sub_values in updates.items():
-            if sub_key != "Version 1.36":  # Skip the version info as it's already included
-                description = sub_values.get("Description", "No description available.")
-                documentation = sub_values.get("Documentation", "No documentation available.")
-                formatted_message.append(f"- **{sub_key}**: {description}")
-                formatted_message.append(f"  - **Documentation**: {documentation}")
-    return "\n".join(formatted_message)
-
-@st.cache_data(show_spinner=False)
 def get_latest_update_from_json(keyword, latest_updates):
     for section in ["Highlights", "Notable Changes", "Other Changes"]:
         for sub_key, sub_value in latest_updates.get(section, {}).items():
@@ -133,135 +95,126 @@ def get_latest_update_from_json(keyword, latest_updates):
                 if keyword.lower() in key.lower() or keyword.lower() in value.lower():
                     return f"Section: {section}\nSub-Category: {sub_key}\n{key}: {value}"
     return "No updates found for the specified keyword."
+def is_inappropriate(text):
+    bad_words = ["prost", "idiot", "stupid", "dracu"]
+    return any(word == text.lower().strip() for word in bad_words)
 
-def on_chat_submit(chat_input, latest_updates):
-    st.session_state.warning_stage += 1
-st.session_state.bad_count += 1
 
-st.session_state.chat_status = "warning"
-st.session_state.warning_text = f"{st.session_state.warning_stage}/3"
-if st.session_state.bad_count >= 3:
-    block_chat(st.session_state.session_id)
-    st.session_state.chat_status = "blocked"
-    user_input = chat_input.strip()
+def is_apology(text):
+    return text.lower().strip() in [
+        "scuze",
+        "îmi cer scuze",
+        "îmi pare rău"
+    ]
+def on_chat_submit(user_input):
 
-    # init counter
-    if "bad_count" not in st.session_state:
+    user_input = user_input.strip()
 
-st.session_state.chat_status = "active"
-st.session_state.warning_stage = 0
-st.session_state.bad_count = 0
-    # ⛔ BLOCKED CHECK
-    if is_chat_blocked(st.session_state.session_id):
+    # 🔒 HARD BLOCK
+    if st.session_state.chat_status == "blocked":
 
-        if is_apology(user_input) or is_educational(user_input):
-            supabase.table("chat_limits") \
-                .delete() \
-                .eq("session_id", st.session_state.session_id) \
-                .execute()
-
+        if is_apology(user_input):
+            st.session_state.chat_status = "active"
             st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat!")
+            st.success("🟢 Chat deblocat")
             return
 
-        st.warning("⛔ Chat blocat. Spune scuze sau întrebare educațională.")
+        # ❗ ACELAȘI MESAJ MEREU
+        st.error("⛔ Chat blocat. Cereți scuze și revino la lecție.")
         return
 
-    # ⚠️ BAD WORDS
+    # ⚠️ BAD WORD CHECK
     if is_inappropriate(user_input):
+
         st.session_state.bad_count += 1
 
-        if st.session_state.bad_count >= 3:
-            block_chat(st.session_state.session_id)
-            st.session_state.bad_count = 0
-            st.error("⛔ Blocat 5 minute.")
+        if st.session_state.bad_count == 1:
+            st.warning("Te rog să folosești un limbaj respectuos pentru a putea continua.")
             return
 
-        st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
-        return
+        elif st.session_state.bad_count == 2:
+            st.warning("Te rog să ai grijă la limbaj. Dacă vei continua, conversația va fi restricționată.")
+            return
 
-    # 💾 SAVE USER (1 SINGURĂ DATĂ)
-    save_message(st.session_state.session_id, "user", user_input)
+        elif st.session_state.bad_count >= 3:
+            st.session_state.chat_status = "blocked"
+            st.error("⛔ Chat blocat. Cereți scuze și revino la lecție.")
+            return
+
+    # ✅ FLOW NORMAL
+    st.session_state.history.append({"role": "user", "content": user_input})
 
     try:
-        assistant_reply = ""
+        thread_id = get_or_create_thread()
 
-        # 📌 SPECIAL CASE
-        if "latest updates" in user_input.lower():
-            assistant_reply = "Here are the latest Streamlit updates."
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_input
+        )
 
-        else:
-            thread_id = get_or_create_thread()
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID
+        )
 
-            client.beta.threads.messages.create(
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
-                role="user",
-                content=user_input
+                run_id=run.id
             )
 
-            run = client.beta.threads.runs.create_and_poll(
-                thread_id=thread_id,
-                assistant_id=ASSISTANT_ID,
-                tools=[{"type": "file_search"}]
-            )
+            if run_status.status == "completed":
+                break
 
-            messages = client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=10
-            )
+            time.sleep(0.5)
 
-            assistant_reply = "Nu am primit răspuns."
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=10
+        )
 
-            for msg in messages.data:
-                if msg.role == "assistant":
-                    parts = [c.text.value for c in msg.content if c.type == "text"]
-                    if parts:
-                        assistant_reply = "\n".join(parts)
-                        break
+        reply = "Nu am primit răspuns."
 
-        # 💾 SAVE ASSISTANT (1 SINGURĂ DATĂ)
-        save_message(st.session_state.session_id, "assistant", assistant_reply)
+        for msg in messages.data:
+            if msg.role == "assistant":
+                parts = [c.text.value for c in msg.content if c.type == "text"]
+                if parts:
+                    reply = "\n".join(parts)
+                    break
 
-        # 🧠 UPDATE UI (1 SINGURĂ DATĂ)
-        st.session_state.history.append({"role": "user", "content": user_input})
-        st.session_state.history.append({"role": "assistant", "content": assistant_reply})
+        st.session_state.history.append({"role": "assistant", "content": reply})
 
     except Exception as e:
         st.error(f"Eroare: {str(e)}")
-        
 def initialize_session_state():
-    if "warning_stage" not in st.session_state:
-    st.session_state.warning_stage = 0
 
-if "chat_status" not in st.session_state:
-    st.session_state.chat_status = "active"
+    import uuid
 
-if "chat_status" not in st.session_state:
-    st.session_state.chat_status = "active"
-
-    # 🔥 FIX PERSISTENT SESSION ID
+    # SESSION ID
     if "session_id" not in st.session_state:
         st.session_state.session_id = st.query_params.get("session_id", None)
 
     if not st.session_state.session_id:
         st.session_state.session_id = str(uuid.uuid4())
         st.query_params["session_id"] = st.session_state.session_id
-
+    if "warning_stage" not in st.session_state:
+        st.session_state.warning_stage = 0
+    # CHAT HISTORY
     if "history" not in st.session_state:
         st.session_state.history = []
 
+    # MODERATION
     if "bad_count" not in st.session_state:
         st.session_state.bad_count = 0
 
     if "chat_status" not in st.session_state:
         st.session_state.chat_status = "active"
 
+    # OPENAI THREAD
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = None
- # ✅ ADĂUGĂ ASTA
-    if "blocked_until" not in st.session_state:
-        st.session_state.blocked_until = None
 def render_sidebar():
     st.sidebar.title("AI Teacher")
     st.sidebar.write("Asistent educațional AI")
@@ -274,42 +227,27 @@ def render_sidebar():
 # MAIN
 # =========================
 def main():
-
     initialize_session_state()
-    status_placeholder = st.empty()
-
-with status_placeholder.container():
-    if st.session_state.chat_status == "warning":
-        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
-
-    elif st.session_state.chat_status == "blocked":
-        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
-
-    elif st.session_state.chat_status == "active":
-        st.success("🟢 Chat activ")
-
-    initialize_session_state()
-    status_placeholder = st.empty()
-
-with status_placeholder.container():
-    if st.session_state.chat_status == "warning":
-        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
-
-    elif st.session_state.chat_status == "blocked":
-        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
-
-    elif st.session_state.chat_status == "active":
-        st.success("🟢 Chat activ")
-
-    # init conversație o singură dată
-    if not st.session_state.history and not st.session_state.conversation_history:
-        st.session_state.conversation_history = initialize_conversation()
 
     # =========================
-    # CHAT LOGIC
+    # STATUS UI
     # =========================
+    status_placeholder = st.empty()
 
-    blocked = is_chat_blocked(st.session_state.session_id)
+    with status_placeholder.container():
+        if st.session_state.chat_status == "warning":
+            st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
+
+        elif st.session_state.chat_status == "blocked":
+            st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
+
+        else:
+            st.success("🟢 Chat activ")
+
+    # =========================
+    # CHECK BLOCK STATUS
+    # =========================
+    blocked = st.session_state.chat_status == "blocked"
 
     if blocked:
         st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
@@ -325,6 +263,8 @@ with status_placeholder.container():
                     .execute()
 
                 st.session_state.bad_count = 0
+                st.session_state.chat_status = "active"
+
                 st.success("✅ Chat deblocat!")
                 st.rerun()
 
@@ -332,379 +272,19 @@ with status_placeholder.container():
                 st.error("❌ Nu este o scuză validă.")
 
     else:
+        # =========================
+        # CHAT INPUT
+        # =========================
         chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
 
-        if chat_input:
-            latest_updates = load_streamlit_updates()
-            on_chat_submit(chat_input, latest_updates)
-
+     if chat_input:
+    on_chat_submit(chat_input)
     # =========================
-    # HISTORY (ALWAYS LAST)
+    # HISTORY (AFTER INPUT)
     # =========================
-
-    for message in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
-        role = message["role"]
-        avatar_image = "imgs/logo.jpg" if role == "assistant" else "👤"
-        with st.chat_message(role, avatar=avatar_image):
-            st.write(message["content"])
-        <style>
-        /* Main background and overall text */
-        [data-testid="stAppViewContainer"] {
-            background-color: #f0f6fc; /* Light blue main background */
-        }
-        
-        [data-testid="stHeader"] {
-            background-color: transparent !important;
-        }
-
-        /* Make all chat message bubbles completely transparent */
-        [data-testid="stChatMessage"] {
-            background-color: transparent !important; 
-            border: none !important;
-            border-radius: 0;
-            padding: 0.5rem 0;
-            margin-bottom: 0.8rem;
-            box-shadow: none !important;
-        }
-        [data-testid="stChatMessage"] > div,
-        [data-testid="stChatMessageContent"] {
-            background-color: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-        }
-        
-        /* Sidebar styling */
-        [data-testid="stSidebar"] {
-            background-color: #1b3a97; /* Royal/Navy Blue exactly as in the image */
-            color: #ffffff;
-        }
-        [data-testid="stSidebar"] * {
-            color: #ffffff;
-        }
-        
-        /* Headings in sidebar */
-        .sidebar-heading {
-            color: #ff7f00; /* Vibrant Orange accents */
-            font-weight: bold;
-            font-size: 1rem;
-            margin-top: 1rem;
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        /* Features list */
-        .feature-item {
-            margin-bottom: 0.3rem;
-            font-size: 0.9rem;
-            line-height: 1.3;
-        }
-        .feature-item span {
-            color: #ff7f00; /* Vibrant Orange bullets */
-            margin-right: 8px;
-            font-weight: bold;
-            font-size: 1.3rem; /* Make the dot stand out */
-            line-height: 0;
-        }
-        
-        /* Subject pills */
-        .subject-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 5px;
-        }
-        .subject-pill {
-            display: inline-flex;
-            align-items: center;
-            background-color: rgba(255, 255, 255, 0.15);
-            border: 1px solid rgba(255, 255, 255, 0.6); /* White accent border for contrast against blue */
-            border-radius: 15px;
-            padding: 4px 10px;
-            font-size: 0.8rem;
-            color: white;
-            transition: background-color 0.2s;
-        }
-        
-        /* Chat message text color to be black */
-        [data-testid="stChatMessageContent"] * {
-            color: #000000 !important; /* Black text */
-        }
-        .subject-pill:hover {
-            background-color: rgba(255, 255, 255, 0.3);
-        }
-        .subject-pill span {
-            margin-right: 6px;
-        }
-        
-        /* Refined primary button (Clear Chat) */
-        [data-testid="stBaseButton-secondary"] {
-            background-color: transparent !important;
-            color: #6b7280 !important;
-            border: 1px solid #d1d5db !important;
-            font-weight: 600;
-            border-radius: 8px !important;
-            padding: 0.4rem 1.2rem !important;
-            box-shadow: none !important;
-            transition: all 0.2s ease;
-        }
-        [data-testid="stBaseButton-secondary"]:hover {
-            background-color: #f3f4f6 !important;
-            border-color: #9ca3af !important;
-            color: #374151 !important;
-            transform: translateY(-1px);
-        }
-        
-        /* Chat header and UI improvements */
-        .chat-header {
-            font-size: 2.2rem;
-            font-weight: 800;
-            color: #ff7f00 !important; /* Orange Header */
-            margin: 0;
-            padding-bottom: 0;
-        }
-        div[data-testid="column"]:first-child {
-    background-color: #000000 !important;
-    padding: 15px 20px;
-    border-radius: 10px;
-}
-        
-        
-        div[data-testid="stHorizontalBlock"] {
-    background-color: #000000 !important;
-    padding: 1.5rem !important;
-    border-radius: 12px;
-}
-  st.markdown("""
-<style>
-div[data-testid="stHorizontalBlock"] {
-    background-color: #000000 !important;
-    padding: 12px 16px !important;
-    border-radius: 10px !important;
-}
-</style>
-""", unsafe_allow_html=True)
-        /* Antet (Header) background white */
-        [data-testid="stHorizontalBlock"] {
-            background-color: #ffffff !important;
-            padding: 2rem 5rem !important;
-            margin: -6rem -5rem 2rem -5rem !important; /* Extindem pt efect full-width vizual */
-            border-bottom: 1px solid #e5e7eb !important;
-            border-radius: 0 !important;
-            align-items: center !important;
-            box-shadow: none !important;
-            width: calc(100% + 10rem) !important;
-            max-width: none !important;
-        }
-        
-        /* Send Button Styling */
-        [data-testid="stChatInputSubmitButton"] {
-            background-color: #ff7f00 !important;
-            border-radius: 50% !important; /* Circular button */
-            width: 35px !important;
-            height: 35px !important;
-            display: inline-flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            margin-right: 5px;
-            border: none !important;
-            box-shadow: 0 2px 4px rgba(255,127,0,0.3);
-        }
-        [data-testid="stChatInputSubmitButton"] svg {
-            fill: #ffffff !important;
-            color: #ffffff !important;
-            width: 18px !important;
-            height: 18px !important;
-        }
-
-        /* Bara de search (Chat Input) alba */
-        [data-testid="stChatInput"] {
-            background-color: transparent !important;
-        }
-        [data-testid="stChatInput"] > div {
-            background-color: #ffffff !important;
-            border: 1px solid #e0e0e0;
-            border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            padding: 2px !important;
-        }
-        [data-testid="stChatInput"] textarea {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            border: none !important;
-        }
-        /* Asiguram background alb la focus */
-        [data-testid="stChatInput"] textarea:focus {
-            background-color: #ffffff !important;
-            outline: none !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Sidebar Content
-    img_path = "imgs/logo.jpg"
-    img_base64 = img_to_base64(img_path)
-    if img_base64:
-        st.sidebar.markdown(
-            f'<div style="display:flex; align-items:center; gap:20px; margin-top: -30px; margin-bottom: 15px;">'
-            f'<div style="background-color:white; padding:5px; height: 60px; width: 60px; display:flex; align-items:center; justify-content:center; border-radius: 12px;">'
-            f'<img src="data:image/jpeg;base64,{img_base64}" style="width: 50px;">'
-            f'</div>'
-            f'<h1 style="margin:0; color:#ff7f00; font-size: 1.6rem; font-weight: bold;">AI Teacher</h1>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.sidebar.markdown("<h1 style='color:#ff7f00; font-size: 2rem;'>AI Teacher</h1>", unsafe_allow_html=True)
-
-    # (Removed the explicit <hr> line separating logo and ABOUT text so it perfectly matches the image)
-    
-    st.sidebar.markdown("<div class='sidebar-heading'>DESPRE</div>", unsafe_allow_html=True)
-    st.sidebar.markdown("""
-    <div style='font-size: 0.9rem; line-height: 1.4; color: white;'>
-    Un asistent educațional inteligent, creat pentru a te ajuta să înveți la o varietate de materii, inclusiv Matematică, Istorie și Limba Română.
-    </div>
-    """, unsafe_allow_html=True)
-    /* 🔝 HEADER NEGRU (bara de sus Streamlit) */
-[data-testid="stHeader"] {
-    background-color: #000000 !important;
-    color: white !important;
-}
-
-[data-testid="stHeader"] * {
-    color: white !important;
-}
-    
-    st.sidebar.markdown("<div class='sidebar-heading'>FUNCȚIONALITĂȚI</div>", unsafe_allow_html=True)
-    st.sidebar.markdown("""
-    <div class='feature-item'><span>.</span>Învățare interactivă prin conversații</div>
-    <div class='feature-item'><span>.</span>Tutorat personalizat pe materii</div>
-    <div class='feature-item'><span>.</span>Explicații pas cu pas</div>
-    <div class='feature-item'><span>.</span>Suport educațional 24/7</div>
-    """, unsafe_allow_html=True)
-
-    st.sidebar.markdown("<div class='sidebar-heading'>CUM FUNCȚIONEAZĂ</div>", unsafe_allow_html=True)
-    st.sidebar.markdown("""
-    <div style='font-size: 0.9rem; line-height: 1.4; color: white;'>
-    Scrie întrebarea ta în chat-ul de mai jos și primește răspunsuri instantanee și personalizate. Poți întreba despre orice subiect, poți cere detalii sau poți solicita ajutor la teme.
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.sidebar.markdown("<div class='sidebar-heading'>MATERII DISPONIBILE</div>", unsafe_allow_html=True)
-    st.sidebar.markdown("""
-    <div class='subject-container'>
-        <div class='subject-pill'><span>📐</span> Matematică</div>
-        <div class='subject-pill'><span>📜</span> Istorie</div>
-        <div class='subject-pill'><span>🇷🇴</span> Română</div>
-        <div class='subject-pill'><span>🔬</span> Științe</div>
-        <div class='subject-pill'><span>💻</span> Programare</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.sidebar.markdown("<div style='border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem; margin-top: 1rem; text-align: center; color: white; font-size: 0.85rem;'>Susținut de Inteligența Artificială</div>", unsafe_allow_html=True)
-
-    # Main Chat Area
-    st.write("") # small padding
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.markdown("<h2 class='chat-header'>Chat</h2>", unsafe_allow_html=True)
-    with col2:
-        if st.button("💡 Cere Hint"):
-            hint_message = "Mă poți ajuta cu un mic indiciu pentru a continua? Te rog nu-mi da rezolvarea completă."
-            latest_updates = load_streamlit_updates()
-            with st.spinner("Pregătesc indiciul..."):
-                on_chat_submit(hint_message, latest_updates)
-
-    # Chat Input Processing
-   # 🔒 verificăm dacă chat-ul este blocat
-blocked = is_chat_blocked(st.session_state.session_id)
-
-if blocked:
-    st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
-
-    apology_input = st.text_input("Scrie scuze aici:")
-
-    if apology_input:
-        if is_apology(apology_input):
-            supabase.table("chat_limits") \
-                .delete() \
-                .eq("session_id", st.session_state.session_id) \
-                .execute()
-
-            st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat!")
-            st.rerun()
-        else:
-            st.error("❌ Nu este o scuză validă.")
-else:
-    chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
-    if chat_input:
-        latest_updates = load_streamlit_updates()
-        on_chat_submit(chat_input, latest_updates)
-   # 🔒 verificăm dacă chat-ul este blocat
-blocked = is_chat_blocked(st.session_state.session_id)
-
-if blocked:
-    st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
-
-    apology_input = st.text_input("Scrie scuze aici:")
-
-    if apology_input:
-        if is_apology(apology_input):
-            supabase.table("chat_limits") \
-                .delete() \
-                .eq("session_id", st.session_state.session_id) \
-                .execute()
-
-            st.session_state.bad_count = 0
-            st.success("✅ Chat deblocat!")
-            st.rerun()
-        else:
-            st.error("❌ Nu este o scuză validă.")
-else:
-    chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
-    if chat_input:
-        latest_updates = load_streamlit_updates()
-        on_chat_submit(chat_input, latest_updates)
-
-if blocked:
-    st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
-
-    apology_input = st.text_input("Scrie scuze aici:")
-
-    if apology_input:
-        if is_apology(apology_input):
-            supabase.table("chat_limits") \
-                .delete() \
-                .eq("session_id", st.session_state.session_id) \
-                .execute()
-
-            st.session_state.bad_count = 0
-            st.success("Deblocat!")
-            st.rerun()
-        return
-
-    # chat input
-   user_input = None
-
-if not is_hard_blocked(st.session_state.session_id):
-    user_input = st.chat_input("Scrie mesaj...")
-
-    if user_input:
-        on_chat_submit(user_input)
-
-    # history
     for msg in st.session_state.history[-NUMBER_OF_MESSAGES_TO_DISPLAY:]:
-        avatar = "👤" if msg["role"] == "user" else "imgs/logo.jpg"
+        role = msg["role"]
+        avatar = "👤" if role == "user" else "imgs/logo.jpg"
 
-        with st.chat_message(msg["role"], avatar=avatar):
+        with st.chat_message(role, avatar=avatar):
             st.write(msg["content"])
-
-
-# =========================
-# RUN APP
-# =========================
-if __name__ == "__main__":
-    main()
