@@ -99,24 +99,20 @@ def is_apology(text):
         "îmi pare rău"
     ]
 
-
 def on_chat_submit(user_input):
-        st.error("⛔ Chat blocat. Cereți scuze.")
+
+    user_input = user_input.strip()
+
+    # 1. DACA E BLOCAT
+    if st.session_state.chat_status == "blocked":
+        st.error("⛔ Chat blocat. Cereți scuze și revino la lecție.")
+        
+        if is_apology(user_input):
+            st.session_state.chat_status = "active"
+            st.session_state.bad_count = 0
+            st.success("🟢 Chat deblocat")
+        
         return
-
-    if is_inappropriate(user_input):
-        st.session_state.bad_count += 1
-
-        if st.session_state.bad_count == 1:
-            st.warning("Limbaj nepotrivit.")
-            return
-        elif st.session_state.bad_count == 2:
-            st.warning("Atenție la limbaj.")
-            return
-        else:
-            st.session_state.chat_status = "blocked"
-            st.error("⛔ Chat blocat.Cereti scuze si revino la lectie")
-            return
 
     st.session_state.history.append({"role": "user", "content": user_input})
 
