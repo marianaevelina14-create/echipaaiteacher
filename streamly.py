@@ -6,10 +6,15 @@ from openai import OpenAI
 # =========================
 # CONFIG
 # =========================
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 ASSISTANT_ID = st.secrets["OPENAI_ASSISTANT_ID"]
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# =========================
+# "FIȘIER" CUVINTE NEADECVATE (SIMULARE)
+# =========================
+BAD_WORDS = [
+    "prost", "idiot", "stupid", "dracu", "bou", "proasta"
+]
 
 # =========================
 # SESSION STATE
@@ -31,14 +36,18 @@ def init_session():
         st.session_state.session_id = str(uuid.uuid4())
 
 # =========================
-# SIMPLE CHECKS
+# RULES
 # =========================
-def is_apology(text):
-    return text.lower().strip() in ["scuze", "îmi cer scuze", "imi cer scuze", "imi pare rau"]
-
 def is_inappropriate(text):
-    bad_words = ["prost", "idiot", "stupid", "dracu"]
-    return any(w in text.lower() for w in bad_words)
+    return any(word in text.lower() for word in BAD_WORDS)
+
+def is_apology(text):
+    text = text.lower().strip()
+    return text in ["scuze", "îmi cer scuze", "imi cer scuze", "îmi pare rău", "imi pare rau"]
+
+BLOCK_MESSAGE = "⛔ Chat blocat. Cereți scuze și revino la lecție."
+
+UNBLOCK_MESSAGE = "🟢 Chat deblocat. Hai să revenim la lecție. Te pot ajuta doar pe baza documentului «Moara cu noroc»."
 
 # =========================
 # OPENAI THREAD
@@ -53,28 +62,43 @@ def get_thread():
 # CHAT LOGIC
 # =========================
 def on_chat_submit(user_input):
+
     user_input = user_input.strip()
 
-    # BLOCKED STATE
+    # =========================
+    # 🔴 DACA ESTE BLOCAT
+    # =========================
     if st.session_state.chat_status == "blocked":
-        st.error("⛔ Chat blocat. Scrie o scuză pentru deblocare.")
+        st.error(BLOCK_MESSAGE)
+
+        # DOAR SCUZE DEBLOCHEAZĂ
+        if is_apology(user_input):
+            st.session_state.chat_status = "active"
+            st.session_state.bad_count = 0
+            st.success(UNBLOCK_MESSAGE)
+            st.rerun()
+
         return
 
-    # BAD LANGUAGE
+    # =========================
+    # 🔴 VERIFICARE LIMBAJ
+    # =========================
     if is_inappropriate(user_input):
         st.session_state.bad_count += 1
 
         if st.session_state.bad_count >= 3:
             st.session_state.chat_status = "blocked"
-            st.error("⛔ Ai fost blocat pentru limbaj nepotrivit.")
+            st.error(BLOCK_MESSAGE)
         else:
-            st.warning(f"⚠️ Limbaj nepotrivit ({st.session_state.bad_count}/3)")
+            st.warning(f"⚠️ Limbaj neadecvat ({st.session_state.bad_count}/3)")
+
         return
 
-    # SAVE USER MESSAGE
+    # =========================
+    # NORMAL CHAT
+    # =========================
     st.session_state.history.append({"role": "user", "content": user_input})
 
-    # SEND TO OPENAI
     thread_id = get_thread()
 
     client.beta.threads.messages.create(
@@ -100,7 +124,7 @@ def on_chat_submit(user_input):
             break
 
         if status.status in ["failed", "cancelled", "expired"]:
-            st.error("Run failed")
+            st.error("Eroare la OpenAI run")
             return
 
         if time.time() - start > 30:
@@ -109,14 +133,14 @@ def on_chat_submit(user_input):
 
         time.sleep(0.5)
 
-    # GET RESPONSE
+    # RESPONSE
     messages = client.beta.threads.messages.list(
         thread_id=thread_id,
         order="desc",
         limit=10
     )
 
-    reply = "No response."
+    reply = "Nu am primit răspuns."
 
     for m in messages.data:
         if m.role == "assistant":
@@ -135,31 +159,38 @@ def main():
 
     st.title("🎓 AI Teacher")
 
-    # STATUS
-    if st.session_state.chat_status == "active":
-        st.success("🟢 Chat activ")
-    else:
-        st.error("⛔ Chat blocat")
+    # =========================
+    # STATUS BLOCKED / ACTIVE
+    # =========================
+    if st.session_state.chat_status == "blocked":
+        st.error(BLOCK_MESSAGE)
 
-        apology = st.text_input("Scrie scuze pentru deblocare:")
+        user_input = st.text_input("Scrie scuze pentru deblocare:")
 
-        if apology:
-            if is_apology(apology):
+        if user_input:
+            if is_apology(user_input):
                 st.session_state.chat_status = "active"
                 st.session_state.bad_count = 0
-                st.success("Deblocat!")
+                st.success(UNBLOCK_MESSAGE)
                 st.rerun()
             else:
-                st.error("Scuză invalidă")
+                st.error("❌ Nu este o scuză validă.")
         return
 
+    else:
+        st.success("🟢 Chat activ")
+
+    # =========================
     # CHAT INPUT
+    # =========================
     user_input = st.chat_input("Scrie mesajul tău...")
 
     if user_input:
         on_chat_submit(user_input)
 
+    # =========================
     # HISTORY
+    # =========================
     for msg in st.session_state.history[-20:]:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
