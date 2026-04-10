@@ -92,13 +92,6 @@ def is_inappropriate(text):
     return any(word == text.lower().strip() for word in bad_words)
 
 
-def is_apology(text):
-    return text.lower().strip() in [
-        "scuze",
-        "îmi cer scuze",
-        "îmi pare rău"
-    ]
-
 def on_chat_submit(user_input):
 
     user_input = user_input.strip()
@@ -107,13 +100,32 @@ def on_chat_submit(user_input):
     if st.session_state.chat_status == "blocked":
         st.error("⛔ Chat blocat. Cereți scuze și revino la lecție.")
         
-        if is_apology(user_input):
-            st.session_state.chat_status = "active"
-            st.session_state.bad_count = 0
-            st.success("🟢 Chat deblocat")
+       def is_apology(text):
+    return text.lower().strip() in [
+        "scuze",
+        "imi cer scuze",
+        "imi pare rau",
+       
+    ]
         
         return
 
+    # 2. VERIFICARE LIMBAJ NEADECVAT 🔥 (ASTA ÎȚI LIPSEA)
+    if is_inappropriate(user_input):
+        st.session_state.bad_count += 1
+
+        if st.session_state.bad_count == 1:
+            st.warning("⚠️ Limbaj nepotrivit.")
+            return
+        elif st.session_state.bad_count == 2:
+            st.warning("⚠️ Atenție la limbaj.")
+            return
+        else:
+            st.session_state.chat_status = "blocked"
+            st.error("⛔ Chat blocat. Cereți scuze și revino la lecție.")
+            return
+
+    # 3. CONTINUĂ NORMAL
     st.session_state.history.append({"role": "user", "content": user_input})
 
     try:
@@ -130,9 +142,6 @@ def on_chat_submit(user_input):
             assistant_id=ASSISTANT_ID
         )
 
-        # =========================
-        # WAIT LOOP (CORECT ÎN FUNCȚIE)
-        # =========================
         start_time = time.time()
 
         while True:
@@ -174,10 +183,9 @@ def on_chat_submit(user_input):
 def initialize_session_state():
     import uuid
 
-if "chat_status" not in st.session_state:
-    st.session_state.chat_status = "active"
+    if "chat_status" not in st.session_state:
+        st.session_state.chat_status = "active"
 
-    # 🔥 FIX PERSISTENT SESSION ID
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
 
@@ -186,9 +194,6 @@ if "chat_status" not in st.session_state:
 
     if "bad_count" not in st.session_state:
         st.session_state.bad_count = 0
-
-    if "chat_status" not in st.session_state:
-        st.session_state.chat_status = "active"
 
     if "thread_id" not in st.session_state:
         st.session_state.thread_id = None
@@ -202,30 +207,6 @@ def main():
     initialize_session_state()
     render_sidebar()
 
-with status_placeholder.container():
-    if st.session_state.chat_status == "warning":
-        st.warning(f"⚠️ {st.session_state.warning_stage}/3 jigniri")
-
-    elif st.session_state.chat_status == "blocked":
-        st.error("⛔ Chat blocat 5 minute. Cere scuze pentru deblocare.")
-
-    elif st.session_state.chat_status == "active":
-        st.success("🟢 Chat activ")
-
-    # init conversație o singură dată
-    if not st.session_state.history and not st.session_state.conversation_history:
-        st.session_state.conversation_history = initialize_conversation()
-
-    # =========================
-    # CHAT LOGIC
-    # =========================
-
-    blocked = is_chat_blocked(st.session_state.session_id)
-
-    if blocked:
-        st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
-
-        apology_input = st.text_input("Scrie scuze aici:")
 
         if apology_input:
             if is_apology(apology_input):
@@ -241,7 +222,7 @@ with status_placeholder.container():
 
         if chat_input:
             latest_updates = load_streamlit_updates()
-            on_chat_submit(chat_input, latest_updates)
+           on_chat_submit(chat_input)
 
     # =========================
     # HISTORY (ALWAYS LAST)
@@ -528,7 +509,6 @@ div[data-testid="stHorizontalBlock"] {
         latest_updates = load_streamlit_updates()
         on_chat_submit(chat_input, latest_updates)
    # 🔒 verificăm dacă chat-ul este blocat
-blocked = is_chat_blocked(st.session_state.session_id)
 
 if blocked:
     st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
@@ -537,8 +517,8 @@ if blocked:
 
     if apology_input:
         if is_apology(apology_input):
-            supabase.table("chat_limits") \
-                .delete() \
+    
+              .delete() \
                 .eq("session_id", st.session_state.session_id) \
                 .execute()
 
@@ -547,11 +527,7 @@ if blocked:
             st.rerun()
         else:
             st.error("❌ Nu este o scuză validă.")
-else:
-    chat_input = st.chat_input("Întreabă-ți profesorul AI orice...")
-    if chat_input:
-        latest_updates = load_streamlit_updates()
-        on_chat_submit(chat_input, latest_updates)
+
 
 if blocked:
     st.warning("⛔ Chat blocat 5 minute. Scrie scuze pentru deblocare.")
@@ -560,7 +536,7 @@ if blocked:
 
     if apology_input:
         if is_apology(apology_input):
-            supabase.table("chat_limits") \
+        
                 .delete() \
                 .eq("session_id", st.session_state.session_id) \
                 .execute()
